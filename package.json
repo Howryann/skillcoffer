@@ -10,7 +10,8 @@
   "files": [
     "dist",
     "examples",
-    "README.md"
+    "README.md",
+    "README.en.md"
   ],
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js && npm run build:ui",
