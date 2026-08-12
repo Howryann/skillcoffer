@@ -69,6 +69,30 @@ skco --help
 npm run skco -- --help
 ```
 
+## 让 Agent 自己安装并学会 skillcoffer
+
+不需要先手动 clone 或安装。把下面这段 Prompt 直接交给有终端权限的 Agent：
+
+```text
+请为自己安装并学会使用 skillcoffer：
+
+1. 检查 `skco --help` 是否可用。如果不可用，自行 clone
+   https://github.com/Howryann/skillcoffer.git 到临时目录，按照仓库 README 完成安装，
+   然后验证 `skco --help`。不要要求我手动执行这些命令。
+2. 使用 `skco` 安装：
+   https://github.com/Howryann/skillcoffer/tree/main/.agents/skills/skillcoffer-operations
+3. 将 `skillcoffer-operations` live 挂载到
+   `~/.agents/skills/skillcoffer-operations`，供后续 Agent 会话自动发现。
+4. 如果 CLI、Skill 或挂载已经存在，先检查现状并复用，不要删除 Store、覆盖普通文件，
+   也不要使用 `--force`。
+5. 读取 `skco path skillcoffer-operations` 下的 `SKILL.md`，立即按其中的流程继续操作，
+   不要等到下一个会话。
+6. 最后运行状态检查，报告 CLI、Skill、挂载路径和验证结果。
+```
+
+完成后，当前 Agent 已经可以按 Skill 中的流程操作 skillcoffer；新会话也会从
+`~/.agents/skills/` 自动发现它。
+
 ## 快速开始
 
 ### 1. 安装一个公开 GitHub skill

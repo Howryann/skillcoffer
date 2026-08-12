@@ -69,6 +69,33 @@ To run from the repository without a global install:
 npm run skco -- --help
 ```
 
+## Let an Agent Install and Learn skillcoffer
+
+You do not need to clone or install anything first. Give this prompt directly to
+an agent with terminal access:
+
+```text
+Install skillcoffer for yourself and learn how to use it:
+
+1. Check whether `skco --help` works. If it does not, clone
+   https://github.com/Howryann/skillcoffer.git into a temporary directory,
+   follow the repository README to install it, then verify `skco --help`.
+   Do not ask me to run these commands manually.
+2. Use `skco` to install:
+   https://github.com/Howryann/skillcoffer/tree/main/.agents/skills/skillcoffer-operations
+3. Mount `skillcoffer-operations` live at
+   `~/.agents/skills/skillcoffer-operations` so future agent sessions discover it.
+4. If the CLI, skill, or mount already exists, inspect and reuse it. Do not delete
+   the Store, overwrite ordinary files, or use `--force`.
+5. Read `SKILL.md` under `skco path skillcoffer-operations` and immediately
+   follow its workflow for the rest of this task; do not wait for a new session.
+6. Run final status checks and report the CLI, skill, mount path, and verification
+   results.
+```
+
+The current agent can then operate skillcoffer using the installed Skill, and
+future sessions will discover it from `~/.agents/skills/`.
+
 ## Quick Start
 
 ### 1. Install a public GitHub skill
