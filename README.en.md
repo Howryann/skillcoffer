@@ -1,6 +1,6 @@
 # skillcoffer
 
-**Keep Agent Skills in a local store you can inspect, version, and compose.**
+**Version, review, and compose Agent Skills without giving up local control.**
 
 [简体中文](./README.md) | **English**
 
@@ -9,32 +9,25 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)
 ![Status: early development](https://img.shields.io/badge/status-early%20development-f0ad4e)
 
-skillcoffer is a local manager for [Agent Skills](https://agentskills.io). It installs skills from local directories or public GitHub repositories, keeps editable work on independent branches, saves immutable versions, tracks upstream changes, and passes one or more skills to a [pi](https://github.com/badlogic/pi-mono) session.
+skillcoffer turns loose [Agent Skills](https://agentskills.io) directories into an inspectable local workflow: install from disk or public GitHub, edit on independent branches, preserve known-good states as immutable snapshots, review upstream diffs before updating, and mount or compose exactly what a [pi](https://github.com/badlogic/pi-mono) session needs.
 
-The full command is `skillcoffer`; `skco` is an equivalent short command.
+No database, hosted service, or new agent runtime is required. Use `skillcoffer`, or the equivalent short command `skco`.
+
+![skillcoffer WebUI showing unsaved changes, branches, live and pinned links, and version history](./docs/images/skill-overview.png)
+
+<p align="center"><sub>Live WebUI, currently available in Simplified Chinese: unsaved changes, branch status, live / pinned links, and immutable versions in one view.</sub></p>
 
 ## Why skillcoffer
 
-A skill is ultimately a directory of files, but using one over time raises practical questions:
+| Capability | What it does |
+|------------|--------------|
+| **Edit freely, roll back cleanly** | `save` creates an immutable snapshot; `restore` resets the current branch's work tree and HEAD to any snapshot without moving existing links. |
+| **Review before updating** | Inspect upstream changes with `check` / `diff`, then explicitly run `update --apply`; GitHub refs resolve to recorded commit SHAs. |
+| **Choose live iteration or reproducibility** | Live links follow editable work for rapid iteration; pinned links stay on an immutable version for important sessions. |
+| **Compose capabilities per session** | A bundle can mix live and pinned skills, then generate or execute the matching `pi --skill ...` command. |
+| **Keep ownership local** | State is ordinary directories, JSON, and symlinks that you can inspect, back up, and recover; the WebUI only listens on loopback. |
 
-- Are you running the upstream version, local edits, or a fixed snapshot?
-- How do you edit a skill without modifying its installation source?
-- How do you review upstream changes before applying them?
-- How can persistent links stay live while important sessions remain pinned?
-- How do you compose several skills for one pi session?
-
-skillcoffer handles these concerns locally with ordinary directories, JSON, and symlinks. It is not a replacement for Git, a remote marketplace, or an agent runtime.
-
-## Features
-
-- **Install from disk or GitHub:** Accepts directories containing `SKILL.md` and public GitHub sources in `owner/repo[/path]` form.
-- **Immutable versions:** `save` records the current tree; `restore` returns to any saved state.
-- **Independent branches:** Every branch has its own editable work directory and HEAD, without copying unsaved edits from another branch.
-- **Reviewable upstream updates:** Run `check` and `diff` before explicitly applying an update. GitHub refs are resolved and recorded as commit SHAs.
-- **Live and pinned links:** A live link follows editable work; a pin targets an immutable version.
-- **Bundles and pi launcher:** Compose several skills and generate or execute `pi --skill ...`.
-- **Local WebUI:** Browse status, files, diffs, versions, links, bundles, and Doctor reports.
-- **Inspectable storage:** State lives in ordinary files that can be inspected, backed up, and recovered directly.
+skillcoffer is not a replacement for Git, a remote marketplace, or an agent runtime. It focuses on the local lifecycle from skill installation and editing through review and use.
 
 ## Requirements
 
@@ -185,7 +178,11 @@ skillcoffer ui --open
 
 The default address is [http://127.0.0.1:7526](http://127.0.0.1:7526). Override it with `--port`. The server binds only to the local loopback interface.
 
-The WebUI supports installation, status, file browsing, diffs, save and restore, upstream updates, links, bundles, and Doctor operations. Skill content remains editable in your own editor.
+The WebUI supports installation, status, file browsing, diffs, save and restore, upstream updates, links, bundles, and Doctor operations. Skill content remains editable in your own editor. The current interface is in Simplified Chinese.
+
+![skillcoffer bundle page showing live and pinned members with a pi launch command](./docs/images/bundle-composition.png)
+
+<p align="center"><sub>Bundles can mix live and pinned members; dirty live skills are called out before they enter a session.</sub></p>
 
 ## Core Model
 

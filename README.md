@@ -1,6 +1,6 @@
 # skillcoffer
 
-**把 Agent Skills 收进一个可检查、可版本化、可组合的本地仓库。**
+**让 Agent Skills 可版本化、可审查、可组合，同时留在本地。**
 
 **简体中文** | [English](./README.en.md)
 
@@ -9,32 +9,25 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)
 ![Status: early development](https://img.shields.io/badge/status-early%20development-f0ad4e)
 
-skillcoffer 是 [Agent Skills](https://agentskills.io) 的本地管理器。它从本机目录或公开 GitHub 仓库安装 skill，为编辑工作保留独立工作线和不可变存档，跟踪上游变化，并将一个或多个 skill 交给 [pi](https://github.com/badlogic/pi-mono) 会话。
+skillcoffer 把散落的 [Agent Skills](https://agentskills.io) 目录变成一套可检查的本地工作流：从本机或公开 GitHub 安装，在独立工作线中编辑，用不可变存档保留已知可用状态，审查上游 diff 后再更新，最后按需挂载或组合进 [pi](https://github.com/badlogic/pi-mono) 会话。
 
-完整命令是 `skillcoffer`，`skco` 是完全等价的短命令。
+不需要数据库、托管服务或另一套 agent runtime。完整命令是 `skillcoffer`，`skco` 是完全等价的短命令。
 
-## 为什么需要 skillcoffer
+![skillcoffer WebUI 展示 skill 的未存档修改、工作线、live 和 pin 挂载以及版本存档](./docs/images/skill-overview.png)
 
-一个 skill 本质上是一组文件，但长期使用时还会遇到这些问题：
+<p align="center"><sub>真实 WebUI：未存档修改、工作线状态、live / pin 挂载与版本存档集中在同一视图。</sub></p>
 
-- 当前使用的是上游版本、本地修改，还是某次固定快照？
-- 如何编辑一个 skill，又不直接污染安装来源？
-- 如何查看上游变化，并在应用前检查 diff？
-- 如何让长期挂载保持实时，同时让重要会话固定版本？
-- 如何把多个 skill 组合起来，只在一次 pi 会话中启用？
+## 为什么用 skillcoffer
 
-skillcoffer 用普通目录、JSON 和 symlink 在本地解决这些问题。它不是 Git 的替代品，也不是远程市场或 agent runtime。
+| 能力 | 作用 |
+|------|------|
+| **放心修改，随时回退** | `save` 创建不可变存档；`restore` 将当前工作线的 work 与 HEAD 重置到任意存档，现有挂载不变。 |
+| **先审查，再更新** | 先用 `check` / `diff` 看清上游变化，再显式执行 `update --apply`；GitHub ref 会解析并记录为 commit SHA。 |
+| **实时迭代，也能固定复现** | live 挂载跟随工作目录，适合快速调整；pin 挂载锁定不可变版本，适合重要会话。 |
+| **一次会话，一套能力** | Bundle 可混合多个 live / pin skill，并直接生成或执行对应的 `pi --skill ...` 命令。 |
+| **本地、透明、可恢复** | 状态只是普通目录、JSON 和 symlink，可直接检查、备份与恢复；WebUI 仅监听本机回环地址。 |
 
-## 功能
-
-- **从本机或 GitHub 安装**：接受包含 `SKILL.md` 的目录，以及 `owner/repo[/path]` 形式的公开 GitHub 来源。
-- **不可变存档**：`save` 为当前文件树创建版本；`restore` 可以回到任意已保存状态。
-- **独立工作线**：每条 branch 都有自己的可编辑 work 目录和 HEAD，不会混入其他工作线的未保存修改。
-- **可审查的上游更新**：先 `check` / `diff`，再显式执行 `update --apply`；GitHub ref 会解析并记录为 commit SHA。
-- **live / pin 挂载**：live 跟随工作目录，pin 固定到不可变版本。
-- **Bundle 与 pi 启动器**：组合多个 skill，并生成或执行 `pi --skill ...`。
-- **本地 WebUI**：浏览状态、文件、diff、存档、挂载、工具包和 Doctor 报告。
-- **可检查的存储**：状态保存在普通文件中，可以直接查看、备份和恢复。
+skillcoffer 不是 Git 的替代品、远程市场或 agent runtime；它专注解决 skill 从安装、修改、审查到使用的本地生命周期。
 
 ## 环境要求
 
@@ -183,6 +176,10 @@ skillcoffer ui --open
 默认地址为 [http://127.0.0.1:7526](http://127.0.0.1:7526)，可通过 `--port` 覆盖。服务只绑定本机回环地址。
 
 WebUI 提供安装、状态、文件浏览、diff、save / restore、上游更新、挂载、Bundle 和 Doctor 操作；skill 内容仍由你自己的编辑器修改。
+
+![skillcoffer Bundle 页面展示 live 与 pin 成员以及 pi 启动命令](./docs/images/bundle-composition.png)
+
+<p align="center"><sub>Bundle 可混合 live 与 pin 成员；dirty 的 live skill 会在进入会话前明确警告。</sub></p>
 
 ## 核心模型
 
