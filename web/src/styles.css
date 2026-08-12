@@ -1,0 +1,115 @@
+@import "tailwindcss";
+@import "react-diff-view/style/index.css";
+
+@theme {
+  --color-bg: #0b0f14;
+  --color-surface: #121820;
+  --color-surface-2: #1a222d;
+  --color-border: #2a3441;
+  --color-text: #e7ecf1;
+  --color-muted: #8b97a8;
+  --color-accent: #3ddc97;
+  --color-warn: #e6b84d;
+  --color-danger: #f07178;
+  --color-pin: #7aa2f7;
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* react-diff-view — dark OLED, gutters scroll with rows (no sticky desync) */
+:root {
+  --diff-background-color: var(--color-bg);
+  --diff-text-color: var(--color-text);
+  --diff-font-family: var(--font-mono);
+  --diff-selection-background-color: #2a3f55;
+  --diff-selection-text-color: var(--color-text);
+  --diff-gutter-insert-background-color: rgba(61, 220, 151, 0.28);
+  --diff-gutter-insert-text-color: var(--color-muted);
+  --diff-gutter-delete-background-color: rgba(240, 113, 120, 0.28);
+  --diff-gutter-delete-text-color: var(--color-muted);
+  --diff-gutter-selected-background-color: var(--color-surface-2);
+  --diff-gutter-selected-text-color: var(--color-text);
+  --diff-code-insert-background-color: rgba(61, 220, 151, 0.16);
+  --diff-code-insert-text-color: #c8f5df;
+  --diff-code-delete-background-color: rgba(240, 113, 120, 0.16);
+  --diff-code-delete-text-color: #f5c4c7;
+  --diff-code-insert-edit-background-color: rgba(61, 220, 151, 0.32);
+  --diff-code-insert-edit-text-color: var(--color-text);
+  --diff-code-delete-edit-background-color: rgba(240, 113, 120, 0.32);
+  --diff-code-delete-edit-text-color: var(--color-text);
+  --diff-code-selected-background-color: var(--color-surface-2);
+  --diff-code-selected-text-color: var(--color-text);
+  --diff-omit-gutter-line-color: var(--color-danger);
+}
+
+.diff-host .diff {
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.diff-host .diff-gutter {
+  color: var(--color-muted);
+  border-right: 1px solid var(--color-border);
+  /* keep gutter in normal table flow — never sticky */
+  position: static;
+}
+
+/* Only neutral lines get surface bg — do NOT paint all .diff-code or insert/delete vanish */
+.diff-host .diff-gutter-normal {
+  background-color: var(--color-surface);
+}
+.diff-host .diff-code-normal {
+  background-color: var(--color-bg);
+}
+.diff-host .diff-code-insert {
+  background-color: rgba(61, 220, 151, 0.18);
+  color: #c8f5df;
+}
+.diff-host .diff-gutter-insert {
+  background-color: rgba(61, 220, 151, 0.28);
+  color: var(--color-muted);
+}
+.diff-host .diff-code-delete {
+  background-color: rgba(240, 113, 120, 0.18);
+  color: #f5c4c7;
+}
+.diff-host .diff-gutter-delete {
+  background-color: rgba(240, 113, 120, 0.28);
+  color: var(--color-muted);
+}
+
+.diff-host .diff-decoration,
+.diff-host .diff-decoration-content {
+  background: var(--color-surface);
+  color: var(--color-pin);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.diff-host .diff-gutter-col {
+  width: 4.5ch;
+}

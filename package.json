@@ -1,0 +1,45 @@
+{
+  "name": "skillcoffer",
+  "version": "0.1.0",
+  "description": "Local agent-skills manager: versions, bundles, GitHub upstream, pi --skill launcher",
+  "type": "module",
+  "bin": {
+    "skillcoffer": "dist/cli.js",
+    "skco": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js && npm run build:ui",
+    "build:ui": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
+    "dev:ui": "vite --config web/vite.config.ts",
+    "prepare": "tsc && chmod +x dist/cli.js",
+    "test": "npm run prepare --silent && node --test test/*.test.mjs",
+    "skco": "npm run build --silent && node dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Howryann/skillcoffer.git"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.4",
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "react": "^19.1.0",
+    "react-diff-view": "^3.3.3",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.5.0",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.8.2",
+    "vite": "^6.3.2"
+  }
+}

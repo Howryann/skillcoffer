@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+*.log
+.skillcoffer/
+.harness/
+artifacts/
+/tmp/
