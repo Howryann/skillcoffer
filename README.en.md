@@ -39,14 +39,10 @@ skillcoffer is not a replacement for Git, a remote marketplace, or an agent runt
 
 ## Installation
 
-The package is not published to the npm registry yet. Install it from source:
+Install globally from npm:
 
 ```bash
-git clone https://github.com/Howryann/skillcoffer.git
-cd skillcoffer
-npm ci
-npm run build
-npm install -g .
+npm install -g skillcoffer
 ```
 
 Verify both commands:
@@ -70,9 +66,8 @@ an agent with terminal access:
 ```text
 Install skillcoffer for yourself and learn how to use it:
 
-1. Check whether `skco --help` works. If it does not, clone
-   https://github.com/Howryann/skillcoffer.git into a temporary directory,
-   follow the repository README to install it, then verify `skco --help`.
+1. Check whether `skco --help` works. If it does not, run
+   `npm install -g skillcoffer`, then verify `skco --help`.
    Do not ask me to run these commands manually.
 2. Use `skco` to install:
    https://github.com/Howryann/skillcoffer/tree/main/.agents/skills/skillcoffer-operations

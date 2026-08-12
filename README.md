@@ -39,14 +39,10 @@ skillcoffer 不是 Git 的替代品、远程市场或 agent runtime；它专注�
 
 ## 安装
 
-项目尚未发布到 npm registry。当前从源码安装：
+使用 npm 全局安装：
 
 ```bash
-git clone https://github.com/Howryann/skillcoffer.git
-cd skillcoffer
-npm ci
-npm run build
-npm install -g .
+npm install -g skillcoffer
 ```
 
 确认两个命令都可用：
@@ -69,9 +65,8 @@ npm run skco -- --help
 ```text
 请为自己安装并学会使用 skillcoffer：
 
-1. 检查 `skco --help` 是否可用。如果不可用，自行 clone
-   https://github.com/Howryann/skillcoffer.git 到临时目录，按照仓库 README 完成安装，
-   然后验证 `skco --help`。不要要求我手动执行这些命令。
+1. 检查 `skco --help` 是否可用。如果不可用，运行
+   `npm install -g skillcoffer`，然后验证 `skco --help`。不要要求我手动执行这些命令。
 2. 使用 `skco` 安装：
    https://github.com/Howryann/skillcoffer/tree/main/.agents/skills/skillcoffer-operations
 3. 将 `skillcoffer-operations` live 挂载到

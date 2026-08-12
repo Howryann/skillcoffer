@@ -17,7 +17,7 @@
     "build": "tsc && chmod +x dist/cli.js && npm run build:ui",
     "build:ui": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
     "dev:ui": "vite --config web/vite.config.ts",
-    "prepare": "tsc && chmod +x dist/cli.js",
+    "prepare": "npm run build",
     "test": "npm run prepare --silent && node --test test/*.test.mjs",
     "skco": "npm run build --silent && node dist/cli.js"
   },
