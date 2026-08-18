@@ -190,8 +190,6 @@ The WebUI supports installation, status, file browsing, diffs, save and restore,
 | **Pin link** | Points to a version tree and does not move after later saves |
 | **Bundle** | A set of live or pinned skills for one pi session |
 
-See the [design contract](./docs/design.md) for detailed semantics and the [WebUI contract](./docs/webui.md) for interface boundaries. These documents are currently written in Chinese.
-
 ## CLI Reference
 
 | Task | Commands |
@@ -257,7 +255,7 @@ npm test
 npm run build
 ```
 
-Changes to state semantics, manifests, or filesystem layout should update the [design contract](./docs/design.md). Changes to WebUI behavior should update the [WebUI contract](./docs/webui.md). Please open an issue first for larger features so the scope can be agreed upon.
+Please open an issue first for larger features so the scope can be agreed upon.
 
 ## Project Status
 

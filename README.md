@@ -187,8 +187,6 @@ WebUI 提供安装、状态、文件浏览、diff、save / restore、上游更�
 | **Pin link** | 指向 version tree，不随后续保存移动 |
 | **Bundle** | 一组 live/pin skill，供一次 pi 会话使用 |
 
-详细语义见[设计契约](./docs/design.md)，Web 界面边界见 [WebUI 契约](./docs/webui.md)。
-
 ## CLI 速查
 
 | 场景 | 命令 |
@@ -254,7 +252,7 @@ npm test
 npm run build
 ```
 
-涉及状态语义、manifest 或文件布局的改动，请同时更新[设计契约](./docs/design.md)；涉及 WebUI 行为的改动，请同步更新 [WebUI 契约](./docs/webui.md)。较大的功能建议先开 Issue 明确范围。
+较大的功能建议先开 Issue 明确范围。
 
 ## 项目状态
 
