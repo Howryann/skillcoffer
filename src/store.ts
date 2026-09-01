@@ -32,6 +32,7 @@ import {
 import {
   acquireGithub,
   parseGithubSpec,
+  publishGithub,
   type GithubSnapshot,
 } from "./github.js";
 
@@ -60,12 +61,21 @@ export type Upstream =
       requestedRef: string;
     };
 
+export type PublicationState = {
+  repo: string;
+  path: string;
+  ref: string;
+  commit: string;
+  treeOid: string;
+};
+
 export type Manifest = {
   schemaVersion: 1;
   localId: string;
   name: string;
   activeBranch: string;
   upstream?: Upstream;
+  publication?: PublicationState;
   branches: Record<string, BranchState>;
   links: LinkRec[];
   updatedAt: string;
@@ -98,6 +108,14 @@ export type CheckResult = {
   localTreeHash?: string;
   resolvedCommit?: string;
   upstreamTreeHash?: string;
+};
+
+export type PublishResult = {
+  publication: PublicationState;
+  branch: string;
+  version: string;
+  dirty: boolean;
+  changed: boolean;
 };
 
 const LOCK_NAME = "store.lock";
@@ -635,6 +653,63 @@ export class Store {
     } finally {
       snap.cleanup();
     }
+  }
+
+  publish(
+    localId: string,
+    target?: string,
+    opts: { branch?: string; ref?: string } = {},
+  ): PublishResult {
+    return this.withLock(() => {
+      const m = this.readManifest(localId);
+      if (!target && !m.publication) {
+        throw new Error("publish requires owner/repo/path the first time");
+      }
+
+      const spec = target
+        ? parseGithubSpec(target, opts.ref ?? m.publication?.ref ?? "main")
+        : {
+            repo: m.publication!.repo,
+            path: m.publication!.path,
+            requestedRef: opts.ref ?? m.publication!.ref,
+          };
+      if (
+        m.publication &&
+        (spec.repo !== m.publication.repo ||
+          spec.path !== m.publication.path ||
+          spec.requestedRef !== m.publication.ref)
+      ) {
+        throw new Error(
+          `publication target already bound to ${m.publication.repo}/${m.publication.path}@${m.publication.ref}`,
+        );
+      }
+
+      const branch = opts.branch ?? m.activeBranch;
+      const branchState = m.branches[branch];
+      if (!branchState) throw new Error(`branch not found: ${branch}`);
+      const version = this.readVersion(localId, branchState.head);
+      const tree = this.versionTree(localId, version.id);
+      if (treeHashOf(tree) !== version.treeHash) {
+        throw new Error(`version tree hash mismatch: ${version.id}`);
+      }
+
+      const published = publishGithub(tree, spec, m.publication?.treeOid);
+      m.publication = {
+        repo: spec.repo,
+        path: spec.path,
+        ref: spec.requestedRef,
+        commit: published.commit,
+        treeOid: published.treeOid,
+      };
+      this.writeManifest(m);
+      return {
+        publication: m.publication,
+        branch,
+        version: version.id,
+        dirty: this.isDirty(localId, branch),
+        changed: published.changed,
+      };
+    });
   }
 
   save(localId: string, opts: { branch?: string; note?: string } = {}): VersionMeta {

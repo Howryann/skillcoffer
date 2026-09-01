@@ -122,7 +122,27 @@ skillcoffer update pdf --apply
 
 `update` previews by default. It only writes a new upstream version when `--apply` is present.
 
-### 4. Use a skill in one pi session
+### 4. Publish a saved Skill
+
+```bash
+skillcoffer publish pdf me/public-skills/skills/pdf --ref main
+skillcoffer publish pdf
+skillcoffer publish pdf --branch concise
+```
+
+The first successful publish binds the target, so later commands can omit it. Publication always uses the saved HEAD of the selected branch; unsaved changes are excluded. The command refuses to overwrite a target path changed outside skillcoffer.
+
+### 5. Back up and restore the Store
+
+```bash
+skillcoffer backend push me/skill-vault
+skillcoffer backend status
+skillcoffer backend pull
+```
+
+The first successful operation binds one dedicated GitHub Backend. Push and pull are always explicit: push refuses a remote that advanced, while pull reports `diverged` when both local and remote changed. The first pull requires an empty Store. Create the repository beforehand; authentication comes from the system Git credential helper.
+
+### 6. Use a skill in one pi session
 
 ```bash
 skillcoffer pi pdf --print
@@ -134,7 +154,7 @@ skillcoffer pi pdf --pin
 - `--pin` uses the immutable version at HEAD.
 - `--print` only displays the command that would run.
 
-### 5. Compose several skills
+### 7. Compose several skills
 
 ```bash
 skillcoffer bundle create research
@@ -190,8 +210,6 @@ The WebUI supports installation, status, file browsing, diffs, save and restore,
 | **Pin link** | Points to a version tree and does not move after later saves |
 | **Bundle** | A set of live or pinned skills for one pi session |
 
-See the [design contract](./docs/design.md) for detailed semantics and the [WebUI contract](./docs/webui.md) for interface boundaries. These documents are currently written in Chinese.
-
 ## CLI Reference
 
 | Task | Commands |
@@ -200,6 +218,8 @@ See the [design contract](./docs/design.md) for detailed semantics and the [WebU
 | Versions | `save`, `versions`, `restore`, `discard` |
 | Branches | `branch list`, `branch new`, `work-on` |
 | Upstream | `check`, `diff`, `update` |
+| Publication | `publish` |
+| Store backup | `backend push`, `backend pull`, `backend status` |
 | Links | `link`, `unlink` |
 | Bundles | `bundle create`, `bundle add`, `bundle path`, `bundle list` |
 | Launch pi | `pi <skill\|bundle>...` |
@@ -217,6 +237,7 @@ SKILLCOFFER_HOME=/path/to/store skillcoffer list
 
 ```text
 $SKILLCOFFER_HOME/
+  backend.json
   skills/<id>/manifest.json
   skills/<id>/versions/<version>/{version.json,tree/}
   skills/<id>/branches/<branch>/work/
@@ -257,7 +278,7 @@ npm test
 npm run build
 ```
 
-Changes to state semantics, manifests, or filesystem layout should update the [design contract](./docs/design.md). Changes to WebUI behavior should update the [WebUI contract](./docs/webui.md). Please open an issue first for larger features so the scope can be agreed upon.
+Please open an issue first for larger features so the scope can be agreed upon.
 
 ## Project Status
 
