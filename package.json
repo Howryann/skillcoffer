@@ -1,6 +1,6 @@
 {
   "name": "skillcoffer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local agent-skills manager: versions, bundles, GitHub upstream, pi --skill launcher",
   "type": "module",
   "bin": {
