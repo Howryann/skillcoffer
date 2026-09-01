@@ -132,7 +132,17 @@ skillcoffer publish pdf --branch concise
 
 The first successful publish binds the target, so later commands can omit it. Publication always uses the saved HEAD of the selected branch; unsaved changes are excluded. The command refuses to overwrite a target path changed outside skillcoffer.
 
-### 5. Use a skill in one pi session
+### 5. Back up and restore the Store
+
+```bash
+skillcoffer backend push me/skill-vault
+skillcoffer backend status
+skillcoffer backend pull
+```
+
+The first successful operation binds one dedicated GitHub Backend. Push and pull are always explicit: push refuses a remote that advanced, while pull reports `diverged` when both local and remote changed. The first pull requires an empty Store. Create the repository beforehand; authentication comes from the system Git credential helper.
+
+### 6. Use a skill in one pi session
 
 ```bash
 skillcoffer pi pdf --print
@@ -144,7 +154,7 @@ skillcoffer pi pdf --pin
 - `--pin` uses the immutable version at HEAD.
 - `--print` only displays the command that would run.
 
-### 6. Compose several skills
+### 7. Compose several skills
 
 ```bash
 skillcoffer bundle create research
@@ -209,6 +219,7 @@ The WebUI supports installation, status, file browsing, diffs, save and restore,
 | Branches | `branch list`, `branch new`, `work-on` |
 | Upstream | `check`, `diff`, `update` |
 | Publication | `publish` |
+| Store backup | `backend push`, `backend pull`, `backend status` |
 | Links | `link`, `unlink` |
 | Bundles | `bundle create`, `bundle add`, `bundle path`, `bundle list` |
 | Launch pi | `pi <skill\|bundle>...` |
@@ -226,6 +237,7 @@ SKILLCOFFER_HOME=/path/to/store skillcoffer list
 
 ```text
 $SKILLCOFFER_HOME/
+  backend.json
   skills/<id>/manifest.json
   skills/<id>/versions/<version>/{version.json,tree/}
   skills/<id>/branches/<branch>/work/

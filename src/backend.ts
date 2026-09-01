@@ -30,6 +30,22 @@ export type BackendState = {
 
 export type BackendResult = BackendState & { changed: boolean };
 
+export type BackendStatus =
+  | "unconfigured"
+  | "synced"
+  | "local-changed"
+  | "remote-changed"
+  | "diverged"
+  | "unavailable";
+
+export type BackendStatusResult = {
+  status: BackendStatus;
+  state?: BackendState;
+  localSnapshotHash?: string;
+  remoteCommit?: string;
+  message?: string;
+};
+
 type BackendCheckout = {
   dir: string;
   remoteRef: string;
@@ -83,6 +99,21 @@ function backendTarget(target: string | undefined, ref: string | undefined): { r
   const refCheck = runGit(["check-ref-format", `refs/heads/${spec.requestedRef}`]);
   if (refCheck.code !== 0) throw new Error(`invalid backend ref: ${spec.requestedRef}`);
   return { repo: spec.repo, ref: spec.requestedRef };
+}
+
+function selectedBackend(
+  state: BackendState | undefined,
+  target: string | undefined,
+  ref: string | undefined,
+): { repo: string; ref: string } {
+  if (!state) return backendTarget(target, ref);
+  const selected = target
+    ? backendTarget(target, ref ?? state.ref)
+    : { repo: state.repo, ref: ref ?? state.ref };
+  if (selected.repo !== state.repo || selected.ref !== state.ref) {
+    throw new Error(`backend already bound to ${state.repo}@${state.ref}`);
+  }
+  return selected;
 }
 
 function checkoutBackend(repo: string, ref: string): BackendCheckout {
@@ -151,22 +182,46 @@ function commitAndPush(checkout: BackendCheckout): string {
   return result.out;
 }
 
+function assertRemoteCommit(checkout: BackendCheckout, expected: string): void {
+  const result = runGit(["ls-remote", "--exit-code", "origin", checkout.remoteRef], checkout.dir);
+  const commit = result.out.split(/\s/)[0];
+  if (result.code !== 0 || commit !== expected) {
+    throw new Error("backend remote changed during sync; retry");
+  }
+}
+
 export function backendPush(
   store: Store,
   target?: string,
   opts: { ref?: string } = {},
 ): BackendResult {
-  if (readBackendState(store)) throw new Error("backend is already configured");
-  const selected = backendTarget(target, opts.ref);
+  const previous = readBackendState(store);
+  const selected = selectedBackend(previous, target, opts.ref);
   const snapshot = createStoreSnapshot(store);
   const checkout = checkoutBackend(selected.repo, selected.ref);
   try {
     let commit: string;
     let changed = false;
-    if (checkout.commit) {
+    if (previous) {
+      if (checkout.commit !== previous.commit) {
+        throw new Error("backend remote advanced; pull before pushing");
+      }
+      if (checkout.snapshotHash !== previous.snapshotHash) {
+        throw new Error("backend snapshot does not match the recorded baseline");
+      }
+      if (snapshot.hash === previous.snapshotHash) {
+        assertRemoteCommit(checkout, previous.commit);
+        return { ...previous, changed: false };
+      }
+      rmSync(join(checkout.dir, "snapshot"), { recursive: true, force: true });
+      cpSync(snapshot.dir, join(checkout.dir, "snapshot"), { recursive: true });
+      commit = commitAndPush(checkout);
+      changed = true;
+    } else if (checkout.commit) {
       if (checkout.snapshotHash !== snapshot.hash) {
         throw new Error("backend already contains a different snapshot");
       }
+      assertRemoteCommit(checkout, checkout.commit);
       commit = checkout.commit;
     } else {
       if (checkout.hasOtherRefs) throw new Error("backend repository is not empty");
@@ -194,15 +249,32 @@ export function backendPull(
   target?: string,
   opts: { ref?: string } = {},
 ): BackendResult {
-  if (readBackendState(store)) throw new Error("backend is already configured");
-  if (store.list().length || store.bundleList().length) {
+  const previous = readBackendState(store);
+  if (!previous && (store.list().length || store.bundleList().length)) {
     throw new Error("first backend pull requires an empty Store");
   }
-  const selected = backendTarget(target, opts.ref);
+  const selected = selectedBackend(previous, target, opts.ref);
   const checkout = checkoutBackend(selected.repo, selected.ref);
   try {
     if (!checkout.commit || !checkout.snapshotDir || !checkout.snapshotHash) {
       throw new Error("backend has no snapshot on the requested ref");
+    }
+    if (previous) {
+      if (
+        checkout.commit === previous.commit &&
+        checkout.snapshotHash === previous.snapshotHash
+      ) {
+        assertRemoteCommit(checkout, previous.commit);
+        return { ...previous, changed: false };
+      }
+      const local = createStoreSnapshot(store);
+      try {
+        if (local.hash !== previous.snapshotHash) {
+          throw new Error("backend diverged: local and remote both changed");
+        }
+      } finally {
+        local.cleanup();
+      }
     }
     restoreStoreSnapshot(store, checkout.snapshotDir);
     const state: BackendState = {
@@ -216,5 +288,54 @@ export function backendPull(
     return { ...state, changed: true };
   } finally {
     checkout.cleanup();
+  }
+}
+
+export function backendStatus(store: Store): BackendStatusResult {
+  const state = readBackendState(store);
+  if (!state) return { status: "unconfigured" };
+  const local = createStoreSnapshot(store);
+  try {
+    let checkout: BackendCheckout;
+    try {
+      checkout = checkoutBackend(state.repo, state.ref);
+    } catch (error) {
+      return {
+        status: "unavailable",
+        state,
+        localSnapshotHash: local.hash,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+    try {
+      if (!checkout.commit || !checkout.snapshotHash) {
+        return {
+          status: "unavailable",
+          state,
+          localSnapshotHash: local.hash,
+          message: "backend snapshot is missing",
+        };
+      }
+      const localChanged = local.hash !== state.snapshotHash;
+      const remoteChanged =
+        checkout.commit !== state.commit || checkout.snapshotHash !== state.snapshotHash;
+      const status: BackendStatus = localChanged
+        ? remoteChanged
+          ? "diverged"
+          : "local-changed"
+        : remoteChanged
+          ? "remote-changed"
+          : "synced";
+      return {
+        status,
+        state,
+        localSnapshotHash: local.hash,
+        remoteCommit: checkout.commit,
+      };
+    } finally {
+      checkout.cleanup();
+    }
+  } finally {
+    local.cleanup();
   }
 }

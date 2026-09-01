@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { looksLikeGithubSpec } from "./github.js";
-import { backendPull, backendPush } from "./backend.js";
+import { backendPull, backendPush, backendStatus } from "./backend.js";
 import {
   Store,
   agentPresetPath,
@@ -37,7 +37,7 @@ Skills:
   ui [--port] [--open]
 
 Storage Backend:
-  backend push|pull [owner/repo] [--ref]
+  backend push|pull [owner/repo] [--ref] | backend status
 
 Install (from this repo):
   npm install -g .
@@ -295,7 +295,16 @@ function cmdPublish(store: Store, pos: string[], flags: Flags) {
 }
 
 function cmdBackend(store: Store, pos: string[], flags: Flags) {
-  const sub = pos.shift() || die("backend push|pull [owner/repo]");
+  const sub = pos.shift() || die("backend push|pull [owner/repo] | backend status");
+  if (sub === "status") {
+    const result = backendStatus(store);
+    console.log(`status: ${result.status}`);
+    if (result.state) console.log(`backend: ${result.state.repo}@${result.state.ref}`);
+    if (result.localSnapshotHash) console.log(`local snapshot: ${result.localSnapshotHash}`);
+    if (result.remoteCommit) console.log(`remote commit: ${result.remoteCommit}`);
+    if (result.message) console.log(result.message);
+    return;
+  }
   const opts = { ref: flag(flags, "ref") };
   const result =
     sub === "push"

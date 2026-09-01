@@ -99,7 +99,8 @@ export function createStoreSnapshot(store: Store): StoreSnapshot {
       for (const manifest of manifests) {
         const skill = join(dir, "skills", manifest.localId);
         const status = store.status(manifest.localId);
-        writeJson(join(skill, "manifest.json"), { ...manifest, links: [] });
+        const { updatedAt: _updatedAt, ...portableManifest } = manifest;
+        writeJson(join(skill, "manifest.json"), { ...portableManifest, links: [] });
         for (const version of status.versions) {
           const versionDir = join(skill, "versions", version.id);
           writeJson(join(versionDir, "version.json"), version);
@@ -195,7 +196,7 @@ function applyLocalLinks(staged: Store, links: Map<string, LinkRec[]>): void {
 
 function stageSnapshot(snapshotDir: string, home: string, links: Map<string, LinkRec[]>): void {
   const entries = readdirSync(snapshotDir).sort();
-  if (entries.join("\n") !== "skills\nsnapshot.json") {
+  if (!["snapshot.json", "skills\nsnapshot.json"].includes(entries.join("\n"))) {
     throw new Error("invalid snapshot root");
   }
   treeHashOf(snapshotDir);
@@ -205,8 +206,10 @@ function stageSnapshot(snapshotDir: string, home: string, links: Map<string, Lin
   }
 
   const skills = join(snapshotDir, "skills");
-  if (!lstatSync(skills).isDirectory()) throw new Error("snapshot skills missing");
-  const skillDirs = readdirSync(skills).sort();
+  if (existsSync(skills) && !lstatSync(skills).isDirectory()) {
+    throw new Error("snapshot skills is not a directory");
+  }
+  const skillDirs = existsSync(skills) ? readdirSync(skills).sort() : [];
   mkdirSync(join(home, "skills"), { recursive: true, mode: 0o700 });
   mkdirSync(join(home, "bundles"), { recursive: true, mode: 0o700 });
   const staged = new Store(home);
@@ -215,6 +218,8 @@ function stageSnapshot(snapshotDir: string, home: string, links: Map<string, Lin
     const source = join(skills, skill);
     if (!lstatSync(source).isDirectory()) throw new Error(`invalid skill snapshot: ${skill}`);
     cpSync(source, staged.skillDir(skill), { recursive: true });
+    const manifest = readJson<Manifest>(staged.manifestPath(skill));
+    writeJson(staged.manifestPath(skill), { ...manifest, updatedAt: new Date().toISOString() });
   }
   validateStagedStore(staged, skillDirs);
 

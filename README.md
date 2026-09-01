@@ -129,7 +129,17 @@ skillcoffer publish pdf --branch concise
 
 首次成功会绑定发布目标，后续命令可省略目标。发布内容始终来自所选工作线的已保存 HEAD；未保存修改不会发布。目标路径被外部修改后，命令会拒绝覆盖。
 
-### 5. 在一次 pi 会话中使用
+### 5. 备份与恢复 Store
+
+```bash
+skillcoffer backend push me/skill-vault
+skillcoffer backend status
+skillcoffer backend pull
+```
+
+首次成功会绑定一个专用 GitHub Backend。`push` 和 `pull` 都是显式操作；远端已前进时 push 会拒绝，本地与远端都变化时 pull 会报告 `diverged`。首次 pull 只接受空 Store。仓库需要预先创建，认证由系统 Git credential helper 提供。
+
+### 6. 在一次 pi 会话中使用
 
 ```bash
 skillcoffer pi pdf --print
@@ -141,7 +151,7 @@ skillcoffer pi pdf --pin
 - `--pin` 使用当前 HEAD 的不可变版本。
 - `--print` 只显示将执行的命令。
 
-### 6. 组合多个 skill
+### 7. 组合多个 skill
 
 ```bash
 skillcoffer bundle create research
@@ -206,6 +216,7 @@ WebUI 提供安装、状态、文件浏览、diff、save / restore、上游更�
 | 工作线 | `branch list`, `branch new`, `work-on` |
 | 上游 | `check`, `diff`, `update` |
 | 发布 | `publish` |
+| Store 备份 | `backend push`, `backend pull`, `backend status` |
 | 挂载 | `link`, `unlink` |
 | 工具包 | `bundle create`, `bundle add`, `bundle path`, `bundle list` |
 | 启动 pi | `pi <skill\|bundle>...` |
@@ -223,6 +234,7 @@ SKILLCOFFER_HOME=/path/to/store skillcoffer list
 
 ```text
 $SKILLCOFFER_HOME/
+  backend.json
   skills/<id>/manifest.json
   skills/<id>/versions/<version>/{version.json,tree/}
   skills/<id>/branches/<branch>/work/

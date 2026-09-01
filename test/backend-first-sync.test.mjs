@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +15,7 @@ import test from "node:test";
 import {
   backendPull,
   backendPush,
+  backendStatus,
   readBackendState,
 } from "../dist/backend.js";
 import { createStoreSnapshot, restoreStoreSnapshot } from "../dist/snapshot.js";
@@ -71,6 +74,7 @@ test("first backend push and pull bind only matching portable snapshots", () => 
     const pushed = backendPush(original, "fixture/vault");
     assert.equal(pushed.changed, true);
     assert.equal(readBackendState(original)?.commit, pushed.commit);
+    assert.equal(statSync(join(original.home, "backend.json")).mode & 0o077, 0);
     assert.match(
       git(root, ["--git-dir", remote, "show", "main:snapshot/snapshot.json"], config),
       /"schemaVersion": 1/,
@@ -104,6 +108,39 @@ test("first backend push and pull bind only matching portable snapshots", () => 
     addSkill(nonempty, root, "local");
     assert.throws(() => backendPull(nonempty, "fixture/vault"), /requires an empty Store/);
     assert.equal(readBackendState(nonempty), undefined);
+
+    assert.equal(backendStatus(original).status, "synced");
+    assert.equal(backendPush(original).changed, false);
+    writeFileSync(join(original.workDir("alpha", "main"), "marker.txt"), "local update\n");
+    assert.equal(backendStatus(original).status, "local-changed");
+    assert.equal(backendPush(original).changed, true);
+    assert.equal(backendStatus(original).status, "synced");
+
+    assert.equal(backendStatus(restored).status, "remote-changed");
+    const restoredLink = join(root, "restored-link");
+    restored.link("alpha", restoredLink, { ref: "main" });
+    assert.equal(backendPull(restored).changed, true);
+    assert.equal(
+      readFileSync(join(restored.workDir("alpha", "main"), "marker.txt"), "utf8"),
+      "local update\n",
+    );
+    assert.equal(restored.status("alpha").manifest.links.length, 1);
+    assert.equal(backendPull(restored).changed, false);
+
+    backendPull(same);
+    same.remove("alpha");
+    assert.equal(backendPush(same).changed, true);
+    const remoteChanged = backendStatus(restored);
+    assert.equal(remoteChanged.status, "remote-changed", remoteChanged.message);
+    const restoredBaseline = readBackendState(restored);
+    assert.throws(() => backendPull(restored), /pull would remove linked skill/);
+    assert.deepEqual(readBackendState(restored), restoredBaseline);
+    assert.equal(restored.hasSkill("alpha"), true);
+
+    writeFileSync(join(original.workDir("alpha", "main"), "marker.txt"), "diverged\n");
+    assert.equal(backendStatus(original).status, "diverged");
+    assert.throws(() => backendPush(original), /remote advanced/);
+    assert.throws(() => backendPull(original), /backend diverged/);
   } finally {
     originalSnapshot?.cleanup();
     if (oldGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL;
