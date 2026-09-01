@@ -1,13 +1,15 @@
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   realpathSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 
 export type GithubSpec = {
   repo: string; // owner/name
@@ -22,6 +24,12 @@ export type GithubSnapshot = {
   path: string;
   requestedRef: string;
   resolvedCommit: string;
+};
+
+export type GithubPublicationResult = {
+  commit: string;
+  treeOid: string;
+  changed: boolean;
 };
 
 function runGit(args: string[], cwd?: string): { code: number; out: string; err: string } {
@@ -189,3 +197,138 @@ export function acquireGithub(spec: GithubSpec): GithubSnapshot {
   }
 }
 
+function publicationTreeOid(repoDir: string, path: string, hasHead: boolean): string | undefined {
+  if (!hasHead) return undefined;
+  const r = runGit(
+    ["ls-tree", "-d", "-z", "HEAD", "--", `:(literal)${path}`],
+    repoDir,
+  );
+  if (r.code !== 0) throw new Error(`cannot inspect publication target: ${r.err}`);
+  if (!r.out) return undefined;
+  const match = r.out.match(/^040000 tree ([0-9a-f]{40,64})\t/);
+  if (!match) throw new Error(`publication target is not a directory: ${path}`);
+  return match[1];
+}
+
+function preparePublicationPath(repoDir: string, path: string): string {
+  let parent = repoDir;
+  for (const part of path.split("/").slice(0, -1)) {
+    parent = join(parent, part);
+    if (existsSync(parent)) {
+      const st = lstatSync(parent);
+      if (st.isSymbolicLink() || !st.isDirectory()) {
+        throw new Error(`unsafe publication parent: ${part}`);
+      }
+    } else {
+      mkdirSync(parent);
+    }
+  }
+  const target = join(repoDir, ...path.split("/"));
+  if (existsSync(target) && lstatSync(target).isSymbolicLink()) {
+    throw new Error(`publication target is a symlink: ${path}`);
+  }
+  return target;
+}
+
+/** Publish one saved skill tree while preserving every other repository path. */
+export function publishGithub(
+  treeDir: string,
+  input: GithubSpec,
+  expectedTreeOid?: string,
+): GithubPublicationResult {
+  const spec = checkedGithubSpec(input.repo, input.path, input.requestedRef);
+  if (!spec.path) throw new Error("publication target requires owner/repo/path");
+  if (spec.path.split("/").includes(".git")) {
+    throw new Error("publication target cannot contain .git");
+  }
+  const refCheck = runGit(["check-ref-format", `refs/heads/${spec.requestedRef}`]);
+  if (refCheck.code !== 0) throw new Error(`invalid publication ref: ${spec.requestedRef}`);
+  if (!existsSync(treeDir) || !lstatSync(treeDir).isDirectory()) {
+    throw new Error(`publication tree not found: ${treeDir}`);
+  }
+
+  const url = `https://github.com/${spec.repo}.git`;
+  const tmp = mkdtempSync(join(tmpdir(), "skillcoffer-publish-"));
+  try {
+    let r = runGit(["init", "--quiet"], tmp);
+    if (r.code !== 0) throw new Error(`git init failed: ${r.err}`);
+    r = runGit(["remote", "add", "origin", url], tmp);
+    if (r.code !== 0) throw new Error(`git remote add failed: ${r.err}`);
+
+    const remoteRef = `refs/heads/${spec.requestedRef}`;
+    r = runGit(["ls-remote", "--exit-code", "origin", remoteRef], tmp);
+    const hasHead = r.code === 0;
+    if (!hasHead && r.code !== 2) {
+      throw new Error(`cannot read ${spec.repo}@${spec.requestedRef}: ${r.err || r.out}`);
+    }
+    if (hasHead) {
+      r = runGit(["fetch", "--depth", "1", "origin", remoteRef], tmp);
+      if (r.code !== 0) throw new Error(`git fetch failed: ${r.err || r.out}`);
+      r = runGit(["checkout", "--quiet", "--detach", "FETCH_HEAD"], tmp);
+      if (r.code !== 0) throw new Error(`git checkout failed: ${r.err || r.out}`);
+    }
+
+    const currentTreeOid = publicationTreeOid(tmp, spec.path, hasHead);
+    if (expectedTreeOid !== undefined && currentTreeOid !== expectedTreeOid) {
+      throw new Error(`publication conflict: ${spec.repo}/${spec.path} changed since last publish`);
+    }
+
+    const target = preparePublicationPath(tmp, spec.path);
+    rmSync(target, { recursive: true, force: true });
+    cpSync(treeDir, target, {
+      recursive: true,
+      filter: (source) => {
+        if (basename(source) === ".git") {
+          throw new Error("skill tree cannot publish .git metadata");
+        }
+        return true;
+      },
+    });
+
+    const pathspec = `:(literal)${spec.path}`;
+    r = runGit(["add", "--all", "--force", "--", pathspec], tmp);
+    if (r.code !== 0) throw new Error(`git add failed: ${r.err || r.out}`);
+    r = runGit(["diff", "--cached", "--quiet", "--", pathspec], tmp);
+    const changed = r.code === 1;
+    if (!changed && r.code !== 0) throw new Error(`git diff failed: ${r.err || r.out}`);
+    if (expectedTreeOid === undefined && currentTreeOid !== undefined && changed) {
+      throw new Error(`publication target already contains different content: ${spec.repo}/${spec.path}`);
+    }
+
+    if (changed) {
+      const hooks = join(tmp, ".skillcoffer-hooks");
+      mkdirSync(hooks);
+      r = runGit(
+        [
+          "-c",
+          `core.hooksPath=${hooks}`,
+          "-c",
+          "commit.gpgSign=false",
+          "commit",
+          "--quiet",
+          "-m",
+          `Publish ${spec.path}`,
+        ],
+        tmp,
+      );
+      if (r.code !== 0) throw new Error(`git commit failed: ${r.err || r.out}`);
+      r = runGit(["push", "origin", `HEAD:${remoteRef}`], tmp);
+      if (r.code !== 0) throw new Error(`git push failed: ${r.err || r.out}`);
+    }
+
+    const commit = runGit(["rev-parse", "HEAD"], tmp);
+    if (commit.code !== 0 || !commit.out) throw new Error(`cannot resolve published commit: ${commit.err}`);
+    if (!changed) {
+      const latest = runGit(["ls-remote", "--exit-code", "origin", remoteRef], tmp);
+      const latestCommit = latest.out.split(/\s/)[0];
+      if (latest.code !== 0 || latestCommit !== commit.out) {
+        throw new Error("publication remote changed during publish; retry");
+      }
+    }
+    const treeOid = publicationTreeOid(tmp, spec.path, true);
+    if (!treeOid) throw new Error(`published target missing: ${spec.path}`);
+    return { commit: commit.out, treeOid, changed };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}

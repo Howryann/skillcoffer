@@ -30,6 +30,7 @@ Pi (session-level):
 
 Skills:
   add <path|owner/repo[/path]> [--ref] [--name] [--agent pi|agents|claude]
+  publish <skill> [owner/repo/path] [--ref] [--branch]
   list | status | path | versions | save | restore | discard
   branch | work-on | link | unlink | diff | check | update | remove | doctor | demo
   ui [--port] [--open]
@@ -272,6 +273,23 @@ function cmdUpdate(store: Store, pos: string[], flags: Flags) {
   console.log("pins unchanged");
 }
 
+function cmdPublish(store: Store, pos: string[], flags: Flags) {
+  const name = needName(store, pos[0]);
+  const result = store.publish(name, pos[1], {
+    branch: flag(flags, "branch"),
+    ref: flag(flags, "ref"),
+  });
+  const target = result.publication;
+  console.log(
+    `${result.changed ? "published" : "already published"} ${name}@${result.branch} (${result.version})`,
+  );
+  console.log(`target: ${target.repo}/${target.path}@${target.ref}`);
+  console.log(`commit: ${target.commit}`);
+  if (result.dirty) {
+    console.log(`warning: unsaved changes on ${result.branch} were not published`);
+  }
+}
+
 function cmdDoctor(store: Store) {
   const skills = store.list();
   console.log(`home: ${store.home}`);
@@ -499,6 +517,9 @@ function main() {
         break;
       case "update":
         cmdUpdate(store, pos, flags);
+        break;
+      case "publish":
+        cmdPublish(store, pos, flags);
         break;
       case "remove":
         store.remove(needName(store, pos[0]), { force: has(flags, "force") });

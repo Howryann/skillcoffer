@@ -122,7 +122,17 @@ skillcoffer update pdf --apply
 
 `update` previews by default. It only writes a new upstream version when `--apply` is present.
 
-### 4. Use a skill in one pi session
+### 4. Publish a saved Skill
+
+```bash
+skillcoffer publish pdf me/public-skills/skills/pdf --ref main
+skillcoffer publish pdf
+skillcoffer publish pdf --branch concise
+```
+
+The first successful publish binds the target, so later commands can omit it. Publication always uses the saved HEAD of the selected branch; unsaved changes are excluded. The command refuses to overwrite a target path changed outside skillcoffer.
+
+### 5. Use a skill in one pi session
 
 ```bash
 skillcoffer pi pdf --print
@@ -134,7 +144,7 @@ skillcoffer pi pdf --pin
 - `--pin` uses the immutable version at HEAD.
 - `--print` only displays the command that would run.
 
-### 5. Compose several skills
+### 6. Compose several skills
 
 ```bash
 skillcoffer bundle create research
@@ -198,6 +208,7 @@ The WebUI supports installation, status, file browsing, diffs, save and restore,
 | Versions | `save`, `versions`, `restore`, `discard` |
 | Branches | `branch list`, `branch new`, `work-on` |
 | Upstream | `check`, `diff`, `update` |
+| Publication | `publish` |
 | Links | `link`, `unlink` |
 | Bundles | `bundle create`, `bundle add`, `bundle path`, `bundle list` |
 | Launch pi | `pi <skill\|bundle>...` |

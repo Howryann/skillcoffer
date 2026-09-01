@@ -119,7 +119,17 @@ skillcoffer update pdf --apply
 
 `update` 默认只预览；只有 `--apply` 才会写入新的上游版本。
 
-### 4. 在一次 pi 会话中使用
+### 4. 发布已保存的 Skill
+
+```bash
+skillcoffer publish pdf me/public-skills/skills/pdf --ref main
+skillcoffer publish pdf
+skillcoffer publish pdf --branch concise
+```
+
+首次成功会绑定发布目标，后续命令可省略目标。发布内容始终来自所选工作线的已保存 HEAD；未保存修改不会发布。目标路径被外部修改后，命令会拒绝覆盖。
+
+### 5. 在一次 pi 会话中使用
 
 ```bash
 skillcoffer pi pdf --print
@@ -131,7 +141,7 @@ skillcoffer pi pdf --pin
 - `--pin` 使用当前 HEAD 的不可变版本。
 - `--print` 只显示将执行的命令。
 
-### 5. 组合多个 skill
+### 6. 组合多个 skill
 
 ```bash
 skillcoffer bundle create research
@@ -195,6 +205,7 @@ WebUI 提供安装、状态、文件浏览、diff、save / restore、上游更�
 | 存档 | `save`, `versions`, `restore`, `discard` |
 | 工作线 | `branch list`, `branch new`, `work-on` |
 | 上游 | `check`, `diff`, `update` |
+| 发布 | `publish` |
 | 挂载 | `link`, `unlink` |
 | 工具包 | `bundle create`, `bundle add`, `bundle path`, `bundle list` |
 | 启动 pi | `pi <skill\|bundle>...` |
