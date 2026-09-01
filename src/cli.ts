@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { looksLikeGithubSpec } from "./github.js";
+import { backendPull, backendPush } from "./backend.js";
 import {
   Store,
   agentPresetPath,
@@ -34,6 +35,9 @@ Skills:
   list | status | path | versions | save | restore | discard
   branch | work-on | link | unlink | diff | check | update | remove | doctor | demo
   ui [--port] [--open]
+
+Storage Backend:
+  backend push|pull [owner/repo] [--ref]
 
 Install (from this repo):
   npm install -g .
@@ -290,6 +294,21 @@ function cmdPublish(store: Store, pos: string[], flags: Flags) {
   }
 }
 
+function cmdBackend(store: Store, pos: string[], flags: Flags) {
+  const sub = pos.shift() || die("backend push|pull [owner/repo]");
+  const opts = { ref: flag(flags, "ref") };
+  const result =
+    sub === "push"
+      ? backendPush(store, pos[0], opts)
+      : sub === "pull"
+        ? backendPull(store, pos[0], opts)
+        : die(`unknown backend subcommand: ${sub}`);
+  const action = result.changed ? (sub === "push" ? "pushed" : "pulled") : "already synced";
+  console.log(`${action} ${result.repo}@${result.ref}`);
+  console.log(`commit: ${result.commit}`);
+  console.log(`snapshot: ${result.snapshotHash}`);
+}
+
 function cmdDoctor(store: Store) {
   const skills = store.list();
   console.log(`home: ${store.home}`);
@@ -520,6 +539,9 @@ function main() {
         break;
       case "publish":
         cmdPublish(store, pos, flags);
+        break;
+      case "backend":
+        cmdBackend(store, pos, flags);
         break;
       case "remove":
         store.remove(needName(store, pos[0]), { force: has(flags, "force") });

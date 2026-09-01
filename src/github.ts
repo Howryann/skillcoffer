@@ -32,7 +32,7 @@ export type GithubPublicationResult = {
   changed: boolean;
 };
 
-function runGit(args: string[], cwd?: string): { code: number; out: string; err: string } {
+export function runGit(args: string[], cwd?: string): { code: number; out: string; err: string } {
   const r = spawnSync("git", args, {
     cwd,
     encoding: "utf8",
