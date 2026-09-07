@@ -589,14 +589,19 @@ async function handleApi(
       return;
     }
     try {
-      const m = looksLikeGithubSpec(source)
+      const result = looksLikeGithubSpec(source)
         ? store.addFromGithub(source)
         : store.addFromFile(source);
-      if (body.agent) {
-        store.link(m.localId, agentPresetPath(body.agent, m.localId), { ref: "main" });
-      }
+      const skills = result.added.map((m) => {
+        if (body.agent) {
+          store.link(m.localId, agentPresetPath(body.agent, m.localId), { ref: "main" });
+        }
+        return buildSkillDetail(store, m.localId);
+      });
       sendJson(res, 201, {
-        skill: buildSkillDetail(store, m.localId),
+        skills,
+        skipped: result.skipped,
+        failed: result.failed,
         overview: buildOverview(store),
       });
     } catch (e) {
@@ -852,7 +857,7 @@ function apiError(res: ServerResponse, e: unknown): void {
     sendJson(res, 404, { error: msg, code: "not_found" });
     return;
   }
-  if (/exists|required|invalid|refusing/.test(msg)) {
+  if (/exists|required|invalid|refusing|duplicate/.test(msg)) {
     sendJson(res, 400, { error: msg, code: "bad_request" });
     return;
   }

@@ -21,17 +21,22 @@ export default function InstallForm({ onInstalled }: { onInstalled?: () => void 
         void installSkill({ source: src, agent: agent || undefined })
           .then((r) => {
             onInstalled?.();
-            nav(`/skills/${encodeURIComponent(r.skill.id)}`);
+            if (r.failed.length) {
+              setError(r.failed.map((f) => `${f.path}: ${f.error}`).join("\n"));
+              return;
+            }
+            if (r.skills.length === 1) nav(`/skills/${encodeURIComponent(r.skills[0].id)}`);
+            else nav("/");
           })
           .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
           .finally(() => setBusy(false));
       }}
     >
       <label className="block space-y-1">
-        <span className="text-xs text-muted">本机路径或 owner/repo[/path]</span>
+        <span className="text-xs text-muted">本机路径、GitHub skill 或集合目录</span>
         <input
           className="w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm text-text"
-          placeholder="./examples/demo-skill 或 anthropics/skills/skills/pdf"
+          placeholder="./examples/demo-skill 或 anthropics/skills/skills"
           value={source}
           onChange={(e) => setSource(e.target.value)}
           disabled={busy}

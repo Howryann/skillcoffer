@@ -12,6 +12,7 @@ import {
   defaultHome,
   printLiveWarning,
   treeHashOf,
+  type Manifest,
 } from "./store.js";
 
 function die(msg: string, code = 2): never {
@@ -46,6 +47,7 @@ Install (from this repo):
 Examples:
   skillcoffer add ./examples/demo-skill
   skillcoffer add anthropics/skills/skills/pdf
+  skillcoffer add anthropics/skills/skills
   skillcoffer bundle create coding
   skillcoffer bundle add coding pdf
   skillcoffer pi coding --print
@@ -109,32 +111,59 @@ function needName(store: Store, posName?: string): string {
   die("skill name required (or install exactly one skill)");
 }
 
-function cmdAdd(store: Store, pos: string[], flags: Flags) {
-  const src = pos[0] || die("add <path|owner/repo[/path]>");
-  const m = looksLikeGithubSpec(src)
-    ? store.addFromGithub(src, { name: flag(flags, "name"), ref: flag(flags, "ref") })
-    : store.addFromFile(src, { name: flag(flags, "name") });
-  const work = store.pathOf(m.localId, "main");
+function printAdded(store: Store, m: Manifest, detailed: boolean) {
+  if (!detailed) {
+    console.log(`added ${m.localId}`);
+    return;
+  }
   console.log(`added ${m.localId} (name=${m.name})`);
-  console.log(`edit: ${work}`);
+  console.log(`edit: ${store.pathOf(m.localId, "main")}`);
   console.log(`store: ${store.skillDir(m.localId)}`);
   if (m.upstream?.remote === "github") {
     console.log(
       `upstream: github:${m.upstream.repo}${m.upstream.path ? "/" + m.upstream.path : ""}@${m.upstream.requestedRef}`,
     );
   }
+}
 
-  let linkTo = flag(flags, "link");
+function cmdAdd(store: Store, pos: string[], flags: Flags) {
+  const src = pos[0] || die("add <path|owner/repo[/path]>");
+  const result = looksLikeGithubSpec(src)
+    ? store.addFromGithub(src, { name: flag(flags, "name"), ref: flag(flags, "ref") })
+    : store.addFromFile(src, { name: flag(flags, "name") });
+  const detailed =
+    result.added.length === 1 && !result.skipped.length && !result.failed.length;
+  for (const m of result.added) printAdded(store, m, detailed);
+  for (const s of result.skipped) console.log(`skipped ${s.localId} (${s.reason})`);
+  for (const f of result.failed) console.error(`failed ${f.path}: ${f.error}`);
+
   const agent = flag(flags, "agent");
-  if (agent) linkTo = agentPresetPath(agent, m.localId);
-  if (linkTo) {
-    const rec = store.link(m.localId, linkTo, { ref: "main" });
+  const explicitLink = flag(flags, "link");
+  if (agent) {
+    for (const m of result.added) {
+      const rec = store.link(m.localId, agentPresetPath(agent, m.localId), { ref: "main" });
+      console.log(`linked ${rec.mode.toUpperCase()} @${rec.ref} -> ${rec.to}`);
+      console.log(printLiveWarning(rec.mode));
+    }
+  } else if (explicitLink && result.added.length === 1) {
+    const rec = store.link(result.added[0].localId, explicitLink, { ref: "main" });
     console.log(`linked ${rec.mode.toUpperCase()} @${rec.ref} -> ${rec.to}`);
     console.log(printLiveWarning(rec.mode));
-  } else {
-    const suggest = agentPresetPath("agents", m.localId);
+  } else if (explicitLink && result.added.length !== 1) {
+    console.log("not linked (--link requires a single skill)");
+  } else if (detailed) {
+    const suggest = agentPresetPath("agents", result.added[0].localId);
     console.log(`not linked (harness will not see it yet)`);
-    console.log(`next: skillcoffer link ${m.localId} --to ${suggest}`);
+    console.log(`next: skillcoffer link ${result.added[0].localId} --to ${suggest}`);
+  } else if (result.added.length) {
+    console.log("not linked (harness will not see them yet)");
+  }
+
+  if (result.failed.length) {
+    die(
+      `added ${result.added.length}, skipped ${result.skipped.length}, failed ${result.failed.length}`,
+      1,
+    );
   }
 }
 

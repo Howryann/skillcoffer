@@ -93,13 +93,15 @@ skillcoffer add anthropics/skills/skills/pdf --ref main
 skillcoffer status pdf -v
 ```
 
-You can also install a local directory:
+You can also install a local directory, or a GitHub folder that contains multiple skills:
 
 ```bash
 skillcoffer add ./my-skill
+skillcoffer add anthropics/skills/skills --ref main
+skillcoffer add 'https://github.com/anthropics/skills/tree/main/skills'
 ```
 
-The skill root must contain `SKILL.md`.
+If the path itself contains `SKILL.md`, that one skill is installed. Otherwise every skill root under it is installed. Each skill keeps its own upstream, so `check` / `update` still run per skill. Existing local IDs are skipped, not overwritten.
 
 ### 2. Edit and save
 
@@ -284,7 +286,7 @@ Please open an issue first for larger features so the scope can be agreed upon.
 
 skillcoffer is in early development. Its core local workflows are usable, but the CLI, WebUI, and storage contract may still change incompatibly before `1.0`.
 
-It does not currently include a remote skill marketplace, publishing service, first-class private GitHub support, collection installation, shell completion, a Windows link fallback, or team permissions.
+It does not currently include a remote skill marketplace, publishing service, first-class private GitHub support, shell completion, a Windows link fallback, or team permissions.
 
 ## License
 
