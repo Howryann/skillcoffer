@@ -20,6 +20,7 @@ import {
   useNotify,
 } from "./Controls";
 import { CollectionArt, Icon } from "./Icons";
+import CollectionHeader from "./CollectionHeader";
 import { useAction, usePolling } from "./usePolling";
 
 export function BundlesPage({
@@ -37,31 +38,17 @@ export function BundlesPage({
     document.title = "Bundles · skillcoffer";
   }, []);
   return (
-    <div className="bundle-page">
-      <div className="page-head">
-        <div>
-          <h1>
-            Bundles
-            <span className="title-count">
-              {overview?.bundles.length ?? "—"}
-            </span>
-          </h1>
-          <p className="subtitle">为一次会话，挑一组工具。</p>
-        </div>
-        <div className="page-actions">
-          <CollectionArt className="bundle-head-art" />
-          <button
-            className="button primary"
-            onClick={() => {
-              action.setError(null);
-              setCreating(true);
-            }}
-          >
-            <Icon name="plus" />
-            新建 Bundle
-          </button>
-        </div>
-      </div>
+    <>
+      <CollectionHeader
+        title="Bundles"
+        count={overview?.bundles.length}
+        subtitle="为一次会话，挑一组工具。"
+        actionLabel="新建 Bundle"
+        onAction={() => {
+          action.setError(null);
+          setCreating(true);
+        }}
+      />
       {!overview ? (
         <p className="empty">加载中…</p>
       ) : overview.bundles.length ? (
@@ -145,7 +132,7 @@ export function BundlesPage({
           </form>
         </Dialog>
       ) : null}
-    </div>
+    </>
   );
 }
 export default function BundlePage({

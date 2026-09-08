@@ -17,7 +17,8 @@ import {
   editingTarget,
   skillMark,
 } from "./Controls";
-import { CollectionArt, Icon, Logo } from "./Icons";
+import { Icon, Logo } from "./Icons";
+import CollectionHeader from "./CollectionHeader";
 import BundlePage, { BundlesPage } from "./BundlePage";
 import InstallForm from "./InstallForm";
 import { usePolling } from "./usePolling";
@@ -307,24 +308,13 @@ function Library({
   const dirtyCount = overview?.skills.filter((s) => s.dirty).length ?? 0;
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>
-            Skills
-            <span className="title-count">
-              {overview?.skills.length ?? "—"}
-            </span>
-          </h1>
-          <p className="subtitle">管理你的 Skills。</p>
-        </div>
-        <div className="page-actions">
-          <CollectionArt />
-          <button className="button primary" onClick={onInstall}>
-            <Icon name="plus" />
-            安装 Skill
-          </button>
-        </div>
-      </div>
+      <CollectionHeader
+        title="Skills"
+        count={overview?.skills.length}
+        subtitle="管理你的 Skills。"
+        actionLabel="安装 Skill"
+        onAction={onInstall}
+      />
       <div className="library">
         <aside className="sources" aria-label="筛选">
           <div className="section-label">Collection</div>

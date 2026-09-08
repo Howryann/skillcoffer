@@ -45,6 +45,9 @@ html[data-theme="dark"] {
 * {
   box-sizing: border-box;
 }
+html {
+  scrollbar-gutter: stable;
+}
 body {
   margin: 0;
   background: var(--paper);
@@ -347,6 +350,12 @@ html[data-theme="dark"] .button.primary {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+.collection-head .page-actions {
+  flex: none;
+}
+.collection-head .button {
+  width: 128px;
 }
 .library {
   display: grid;
@@ -1439,6 +1448,12 @@ dialog::backdrop {
   .page-head {
     min-height: 133px;
     padding: 26px 0 23px;
+  }
+  .collection-head {
+    gap: 12px;
+  }
+  .collection-head .button {
+    width: 120px;
   }
   .page-head .subtitle {
     font-size: 11px;
