@@ -195,11 +195,20 @@ export function backendPush(
   target?: string,
   opts: { ref?: string } = {},
 ): BackendResult {
+  return store.withLock(() => pushBackendLocked(store, target, opts));
+}
+
+function pushBackendLocked(
+  store: Store,
+  target: string | undefined,
+  opts: { ref?: string },
+): BackendResult {
   const previous = readBackendState(store);
   const selected = selectedBackend(previous, target, opts.ref);
   const snapshot = createStoreSnapshot(store);
-  const checkout = checkoutBackend(selected.repo, selected.ref);
+  let checkout: BackendCheckout | undefined;
   try {
+    checkout = checkoutBackend(selected.repo, selected.ref);
     let commit: string;
     let changed = false;
     if (previous) {
@@ -239,7 +248,7 @@ export function backendPush(
     writeBackendState(store, state);
     return { ...state, changed };
   } finally {
-    checkout.cleanup();
+    checkout?.cleanup();
     snapshot.cleanup();
   }
 }
@@ -248,6 +257,14 @@ export function backendPull(
   store: Store,
   target?: string,
   opts: { ref?: string } = {},
+): BackendResult {
+  return store.withLock(() => pullBackendLocked(store, target, opts));
+}
+
+function pullBackendLocked(
+  store: Store,
+  target: string | undefined,
+  opts: { ref?: string },
 ): BackendResult {
   const previous = readBackendState(store);
   if (!previous && (store.list().length || store.bundleList().length)) {
@@ -292,6 +309,10 @@ export function backendPull(
 }
 
 export function backendStatus(store: Store): BackendStatusResult {
+  return store.withLock(() => backendStatusLocked(store));
+}
+
+function backendStatusLocked(store: Store): BackendStatusResult {
   const state = readBackendState(store);
   if (!state) return { status: "unconfigured" };
   const local = createStoreSnapshot(store);

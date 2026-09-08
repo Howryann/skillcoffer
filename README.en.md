@@ -252,6 +252,10 @@ $SKILLCOFFER_HOME/
 - The WebUI listens only on `127.0.0.1` and has no remote multi-user authentication.
 - The store is local state; back it up like other development data.
 
+Store writes use `.store-write.lock` for exclusion across processes. Backend push, pull, and status hold the lock throughout the sync or check. If another process reports `Store busy`, retry after the current operation finishes. The lock does not prevent editors from changing work files directly.
+
+A crashed process can leave its lock behind. Stop every CLI and WebUI process using that Store, then remove only the `.store-write.lock` file named in the error and retry. Do not remove it while a writer could still be running; locks are never reclaimed automatically based on a PID or timeout. Restart older processes after upgrading, since the new lock cannot coordinate with versions using the prototype lock.
+
 ## Development
 
 ```bash

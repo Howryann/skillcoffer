@@ -4,12 +4,10 @@ import {
 } from "node:crypto";
 import {
   chmodSync,
-  closeSync,
   copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
-  openSync,
   readFileSync,
   readdirSync,
   readlinkSync,
@@ -35,6 +33,7 @@ import {
   publishGithub,
   type GithubSnapshot,
 } from "./github.js";
+import { withStoreLock } from "./lock.js";
 
 export type LinkMode = "live" | "pin";
 
@@ -134,7 +133,6 @@ export type AddResult = {
   failed: AddFailure[];
 };
 
-const LOCK_NAME = "store.lock";
 const LOCAL_ID_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 const VERSION_ID_RE = /^ver_[a-z0-9]+_[0-9a-f]{8}$/;
 
@@ -293,6 +291,11 @@ function assertVersionId(id: string): void {
   }
 }
 
+function hasLocalDivergence(state: BranchState): boolean {
+  // Legacy branches and versions without a known base must not silently reset.
+  return state.upstreamBaseVersion === undefined || state.upstreamBaseVersion !== state.head;
+}
+
 export class Store {
   readonly home: string;
 
@@ -328,26 +331,7 @@ export class Store {
   }
 
   withLock<T>(fn: () => T): T {
-    ensureDir(this.home);
-    const lockPath = join(this.home, LOCK_NAME);
-    const fd = openSync(lockPath, "w", 0o600);
-    try {
-      // advisory lock via exclusive create loop is weak; use flock-like with O_EXCL stamp
-      // Node has no flock in stable without deps — simple pid lock file for prototype
-      const stamp = join(this.home, `.lock-${process.pid}`);
-      writeFileSync(stamp, String(process.pid), { mode: 0o600 });
-      try {
-        return fn();
-      } finally {
-        try {
-          unlinkSync(stamp);
-        } catch {
-          /* ignore */
-        }
-      }
-    } finally {
-      closeSync(fd);
-    }
+    return withStoreLock(this.home, fn);
   }
 
   private readManifest(localId: string): Manifest {
@@ -636,8 +620,7 @@ export class Store {
     }
     try {
       const upHash = snap.treeHash;
-      const base = st.upstreamBaseVersion;
-      const localMoved = base !== undefined && base !== st.head;
+      const localMoved = hasLocalDivergence(st);
 
       if (upHash === headMeta.treeHash) {
         return {
@@ -653,7 +636,7 @@ export class Store {
         return {
           status: "local-diverged",
           message:
-            "local branch has saves after last upstream apply, and upstream tree differs — open a branch or update --force",
+            "local branch differs from upstream and has local saves or an unknown upstream base — review before update --force",
           localHead: st.head,
           localTreeHash: headMeta.treeHash,
           resolvedCommit: snap.resolvedCommit,
@@ -699,8 +682,7 @@ export class Store {
       try {
         const upHash = treeHashOf(snap.treeDir);
         const headMeta = this.readVersion(localId, st.head);
-        const localMoved =
-          st.upstreamBaseVersion !== undefined && st.upstreamBaseVersion !== st.head;
+        const localMoved = hasLocalDivergence(st);
 
         if (upHash === headMeta.treeHash) {
           return {
@@ -717,8 +699,8 @@ export class Store {
         }
         if (localMoved && !opts.force) {
           throw new Error(
-            `local-diverged: HEAD moved since last upstream apply. ` +
-              `Create a branch, or pass --force to hard-reset onto upstream`,
+            `local-diverged: HEAD moved since last upstream apply or its upstream base is unknown. ` +
+              `Review the diff, or pass --force to hard-reset onto upstream`,
           );
         }
 
@@ -888,20 +870,25 @@ export class Store {
       assertLocalId(branchName);
       const m = this.readManifest(localId);
       if (m.branches[branchName]) throw new Error(`branch exists: ${branchName}`);
-      let fromVer = m.branches[m.activeBranch]?.head;
-      if (opts.from) {
-        if (m.branches[opts.from]) fromVer = m.branches[opts.from].head;
-        else {
-          this.readVersion(localId, opts.from);
-          fromVer = opts.from;
-        }
+      const from = opts.from ?? m.activeBranch;
+      const sourceBranch = m.branches[from];
+      let fromVer: string;
+      let upstreamBaseVersion: string | undefined;
+      if (sourceBranch) {
+        fromVer = sourceBranch.head;
+        upstreamBaseVersion = sourceBranch.upstreamBaseVersion;
+      } else {
+        const version = this.readVersion(localId, from);
+        fromVer = version.id;
+        // A known upstream snapshot is its own base. Local historical versions
+        // have no ancestry metadata, so leave their base unknown and protected.
+        if (version.source === "upstream" && version.upstream) upstreamBaseVersion = version.id;
       }
-      if (!fromVer) throw new Error("no source version");
       // from HEAD tree, not dirty work
       copyTree(this.versionTree(localId, fromVer), this.workDir(localId, branchName), {
         writable: true,
       });
-      m.branches[branchName] = { head: fromVer };
+      m.branches[branchName] = { head: fromVer, upstreamBaseVersion };
       this.writeManifest(m);
       return m;
     });
