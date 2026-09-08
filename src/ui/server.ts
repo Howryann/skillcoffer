@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, lstatSync, readFileSync, readlinkSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
@@ -10,6 +11,7 @@ import {
   defaultHome,
   treeHashOf,
   type CheckResult,
+  type Manifest,
 } from "../store.js";
 import type {
   BundleDetail,
@@ -21,11 +23,26 @@ import type {
   SkillDetail,
 } from "./contracts.js";
 
+function overviewGroup(m: Manifest, home = homedir()): Pick<OverviewSkill, "groupKey" | "groupLabel"> {
+  if (m.upstream?.remote === "github") {
+    return { groupKey: m.upstream.repo, groupLabel: m.upstream.repo };
+  }
+  if (m.upstream?.remote === "file") {
+    const dir = dirname(m.upstream.sourcePath);
+    const prefix = home.endsWith(sep) ? home : home + sep;
+    const groupLabel =
+      dir === home ? "~" : dir.startsWith(prefix) ? `~${dir.slice(home.length)}` : dir;
+    return { groupKey: dir, groupLabel };
+  }
+  return { groupKey: "本地", groupLabel: "本地" };
+}
+
 export function buildOverview(store: Store): Overview {
   const skills: OverviewSkill[] = store.list().map((m) => ({
     id: m.localId,
     name: m.name,
     dirty: Boolean(store.status(m.localId).dirty[m.activeBranch]),
+    ...overviewGroup(m),
   }));
 
   const skillDirty = new Map(skills.map((s) => [s.id, s.dirty]));
