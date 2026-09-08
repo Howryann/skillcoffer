@@ -66,8 +66,8 @@ test("restore accepts only versions owned by the selected skill", () => {
   const root = mkdtempSync(join(tmpdir(), "skillcoffer-restore-"));
   try {
     const store = new Store(join(root, "home"));
-    const alpha = store.addFromFile(createSkill(root, "alpha", "alpha"));
-    const beta = store.addFromFile(createSkill(root, "beta", "beta"));
+    const alpha = store.addFromFile(createSkill(root, "alpha", "alpha")).added[0];
+    const beta = store.addFromFile(createSkill(root, "beta", "beta")).added[0];
     const injected = `../../beta/versions/${beta.branches.main.head}`;
 
     assert.throws(

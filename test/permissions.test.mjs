@@ -29,7 +29,7 @@ test(
       chmodSync(join(source, "secret.txt"), 0o600);
 
       const store = new Store(home);
-      const manifest = store.addFromFile(source);
+      const manifest = store.addFromFile(source).added[0];
       const workSecret = join(store.workDir("private-skill", "main"), "secret.txt");
       const versionSecret = join(
         store.versionTree("private-skill", manifest.branches.main.head),

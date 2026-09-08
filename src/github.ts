@@ -18,7 +18,7 @@ export type GithubSpec = {
 };
 
 export type GithubSnapshot = {
-  treeDir: string; // absolute path to skill root with SKILL.md
+  treeDir: string; // absolute path to requested repo path
   cleanup: () => void;
   repo: string;
   path: string;
@@ -174,15 +174,6 @@ export function acquireGithub(spec: GithubSpec): GithubSnapshot {
     if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
       throw new Error(`github path escapes checkout: ${spec.path || "(root)"}`);
     }
-    const skillMd = join(treeDir, "SKILL.md");
-    if (!existsSync(skillMd)) {
-      // case variants
-      const alt = ["skill.md", "Skill.md"].map((n) => join(treeDir, n)).find((p) => existsSync(p));
-      if (!alt) {
-        throw new Error(`SKILL.md not found under ${spec.repo}:${spec.path || "."} @ ${resolvedCommit.slice(0, 7)}`);
-      }
-    }
-
     return {
       treeDir,
       cleanup,

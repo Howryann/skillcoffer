@@ -118,6 +118,22 @@ export type PublishResult = {
   changed: boolean;
 };
 
+export type AddSkip = {
+  localId: string;
+  reason: string;
+};
+
+export type AddFailure = {
+  path: string;
+  error: string;
+};
+
+export type AddResult = {
+  added: Manifest[];
+  skipped: AddSkip[];
+  failed: AddFailure[];
+};
+
 const LOCK_NAME = "store.lock";
 const LOCAL_ID_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 const VERSION_ID_RE = /^ver_[a-z0-9]+_[0-9a-f]{8}$/;
@@ -211,6 +227,39 @@ function copyTree(src: string, dest: string, opts: { writable?: boolean } = {}):
     // Work trees add owner read/write without broadening group/other access.
     chmodSync(target, opts.writable ? mode | 0o600 : mode);
   }
+}
+
+function posixRel(from: string, to: string): string {
+  return relative(from, to).split(sep).join("/");
+}
+
+function hasSkillMd(dir: string): boolean {
+  return existsSync(join(dir, "SKILL.md"));
+}
+
+/** Directories that are skill roots. A root with SKILL.md is itself; else descendants, skipping nested skills. */
+function discoverSkillRoots(root: string): string[] {
+  const st = lstatSync(root);
+  if (st.isSymbolicLink()) throw new Error(`symlink not allowed as skill root: ${root}`);
+  if (!st.isDirectory()) throw new Error(`not a directory: ${root}`);
+  if (hasSkillMd(root)) return [root];
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir).sort()) {
+      const full = join(dir, name);
+      let child;
+      try {
+        child = lstatSync(full);
+      } catch {
+        continue;
+      }
+      if (child.isSymbolicLink() || !child.isDirectory()) continue;
+      if (hasSkillMd(full)) found.push(full);
+      else walk(full);
+    }
+  };
+  walk(root);
+  return found.sort((a, b) => posixRel(root, a).localeCompare(posixRel(root, b)));
 }
 
 function parseSkillName(skillRoot: string): string {
@@ -392,33 +441,44 @@ export class Store {
     throw new Error(`unknown ref: ${r}`);
   }
 
-  addFromFile(sourcePath: string, opts: { name?: string } = {}): Manifest {
+  addFromFile(sourcePath: string, opts: { name?: string } = {}): AddResult {
     const src = resolve(sourcePath);
-    return this.installSnapshot(src, {
+    const roots = discoverSkillRoots(src);
+    if (!roots.length) throw new Error(`SKILL.md not found in ${src}`);
+    return this.installDiscovered(src, roots, {
       name: opts.name,
       source: "file",
-      note: `add from ${src}`,
-      upstream: { remote: "file", sourcePath: src },
+      noteFor: (root) => `add from ${root}`,
+      upstreamFor: (root) => ({ remote: "file", sourcePath: root }),
     });
   }
 
   addFromGithub(
     specInput: string,
     opts: { name?: string; ref?: string } = {},
-  ): Manifest {
+  ): AddResult {
     const spec = parseGithubSpec(specInput, opts.ref ?? "main");
     const snap = acquireGithub(spec);
     try {
-      return this.installSnapshot(snap.treeDir, {
+      const roots = discoverSkillRoots(snap.treeDir);
+      if (!roots.length) {
+        throw new Error(
+          `SKILL.md not found under ${spec.repo}:${spec.path || "."} @ ${snap.resolvedCommit.slice(0, 7)}`,
+        );
+      }
+      return this.installDiscovered(snap.treeDir, roots, {
         name: opts.name,
         source: "upstream",
-        note: `add github:${snap.repo}${snap.path ? "/" + snap.path : ""}@${snap.resolvedCommit.slice(0, 7)}`,
-        upstream: {
+        noteFor: (root) => {
+          const path = [snap.path, posixRel(snap.treeDir, root)].filter(Boolean).join("/");
+          return `add github:${snap.repo}${path ? "/" + path : ""}@${snap.resolvedCommit.slice(0, 7)}`;
+        },
+        upstreamFor: (root) => ({
           remote: "github",
           repo: snap.repo,
-          path: snap.path,
+          path: [snap.path, posixRel(snap.treeDir, root)].filter(Boolean).join("/"),
           requestedRef: snap.requestedRef,
-        },
+        }),
         versionUpstream: {
           requestedRef: snap.requestedRef,
           resolvedCommit: snap.resolvedCommit,
@@ -427,6 +487,56 @@ export class Store {
     } finally {
       snap.cleanup();
     }
+  }
+
+  private installDiscovered(
+    base: string,
+    roots: string[],
+    opts: {
+      name?: string;
+      source: VersionMeta["source"];
+      noteFor: (root: string) => string;
+      upstreamFor: (root: string) => Upstream;
+      versionUpstream?: VersionUpstream;
+    },
+  ): AddResult {
+    if (opts.name && roots.length !== 1) {
+      throw new Error("name override requires a single skill");
+    }
+    const parsed = roots.map((root) => ({ root, name: parseSkillName(root) }));
+    const seen = new Set<string>();
+    for (const p of parsed) {
+      if (seen.has(p.name)) throw new Error(`duplicate skill name in collection: ${p.name}`);
+      seen.add(p.name);
+    }
+
+    const added: Manifest[] = [];
+    const skipped: AddSkip[] = [];
+    const failed: AddFailure[] = [];
+    for (const p of parsed) {
+      const localId = opts.name ?? p.name;
+      if (this.hasSkill(localId)) {
+        skipped.push({ localId, reason: "already exists" });
+        continue;
+      }
+      try {
+        added.push(
+          this.installSnapshot(p.root, {
+            name: opts.name,
+            source: opts.source,
+            note: opts.noteFor(p.root),
+            upstream: opts.upstreamFor(p.root),
+            versionUpstream: opts.versionUpstream,
+          }),
+        );
+      } catch (e) {
+        failed.push({
+          path: posixRel(base, p.root) || ".",
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    return { added, skipped, failed };
   }
 
   /** Shared install from a skill directory on disk. */

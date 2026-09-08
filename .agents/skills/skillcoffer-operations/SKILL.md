@@ -56,17 +56,24 @@ authorities for current behavior:
 
 ## Install
 
-Install a local directory or a public GitHub skill directory:
+Install a local directory, a public GitHub skill directory, or a GitHub folder
+that contains multiple skill roots:
 
 ```bash
 skco add ./path/to/skill
 skco add 'owner/repo/path/to/skill' --ref main
 skco add 'https://github.com/owner/repo/tree/main/path/to/skill'
+skco add 'owner/repo/skills' --ref main
+skco add 'https://github.com/owner/repo/tree/main/skills'
 ```
 
-The source directory must contain `SKILL.md` with a valid lowercase hyphenated
-`name`. Use `--name <local-id>` only to resolve a deliberate local name
-collision. Existing local IDs are rejected rather than overwritten.
+If the source directory itself contains `SKILL.md`, install that one skill.
+Otherwise discover skill roots under it (directories that contain `SKILL.md`;
+do not treat descendants of a skill root as more skills). Each installed skill
+records its own GitHub path as Upstream, so later `check` / `update` stay
+per-skill. Duplicate `name` values in the collection fail before writing.
+Existing local IDs are skipped rather than overwritten. `--name <local-id>` is
+only valid when exactly one skill is discovered.
 
 After installation, verify the snapshot rather than trusting one success line:
 

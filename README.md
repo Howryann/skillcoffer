@@ -90,13 +90,15 @@ skillcoffer add anthropics/skills/skills/pdf --ref main
 skillcoffer status pdf -v
 ```
 
-也可以安装本机目录：
+也可以安装本机目录，或一个包含多个 Skill 的 GitHub 文件夹：
 
 ```bash
 skillcoffer add ./my-skill
+skillcoffer add anthropics/skills/skills --ref main
+skillcoffer add 'https://github.com/anthropics/skills/tree/main/skills'
 ```
 
-skill 根目录必须包含 `SKILL.md`。
+路径本身含 `SKILL.md` 时安装那一个 Skill；否则扫描子树中的 Skill 根目录并逐个安装。每个 Skill 仍记录自己的 Upstream，可单独 `check` / `update`。已存在的 local id 会跳过，不会覆盖。
 
 ### 2. 编辑并保存
 
@@ -281,7 +283,7 @@ npm run build
 
 skillcoffer 当前处于早期开发阶段，核心本地工作流已经可用，但 CLI、WebUI 和存储契约在 `1.0` 前仍可能发生破坏性变化。
 
-目前不包含：远程 skill 市场、发布服务、私有 GitHub 一等支持、集合批量安装、shell completion、Windows link 替代模式，以及团队权限系统。
+目前不包含：远程 skill 市场、发布服务、私有 GitHub 一等支持、shell completion、Windows link 替代模式，以及团队权限系统。
 
 ## 许可证
 

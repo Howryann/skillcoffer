@@ -58,7 +58,12 @@ export function fixDoctorIssue(opts: {
 export function installSkill(opts: {
   source: string;
   agent?: string;
-}): Promise<{ skill: { id: string }; overview: Overview }> {
+}): Promise<{
+  skills: { id: string }[];
+  skipped: { localId: string; reason: string }[];
+  failed: { path: string; error: string }[];
+  overview: Overview;
+}> {
   return post("/api/install", opts);
 }
 
