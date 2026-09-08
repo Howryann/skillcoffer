@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
-import { createBundle, fetchDoctor, fetchOverview, type Overview } from "./api";
+import { createBundle, fetchDoctor, fetchOverview, type Overview, type OverviewSkill } from "./api";
 import BundlePage from "./BundlePage";
 import DoctorPage from "./DoctorPage";
 import InstallForm from "./InstallForm";
@@ -42,6 +42,16 @@ function Shell({
     if (!s) return list;
     return list.filter((x) => x.id.toLowerCase().includes(s) || x.name.toLowerCase().includes(s));
   }, [overview, q]);
+
+  const skillGroups = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; skills: OverviewSkill[] }>();
+    for (const sk of skills) {
+      const cur = map.get(sk.groupKey);
+      if (cur) cur.skills.push(sk);
+      else map.set(sk.groupKey, { key: sk.groupKey, label: sk.groupLabel, skills: [sk] });
+    }
+    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [skills]);
 
   const bundles = useMemo(() => {
     const list = overview?.bundles ?? [];
@@ -91,11 +101,20 @@ function Shell({
         <aside className="flex w-60 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface">
           <SectionLabel>Skills</SectionLabel>
           <nav className="px-2 pb-2" aria-label="Skills">
-            {skills.length ? (
-              skills.map((s) => (
-                <SideLink key={s.id} to={`/skills/${s.id}`} dirty={s.dirty}>
-                  {s.id}
-                </SideLink>
+            {skillGroups.length ? (
+              skillGroups.map((g) => (
+                <SkillGroup
+                  key={g.key}
+                  groupKey={g.key}
+                  label={g.label}
+                  forceOpen={Boolean(q.trim())}
+                >
+                  {g.skills.map((s) => (
+                    <SideLink key={s.id} to={`/skills/${s.id}`} dirty={s.dirty}>
+                      {s.id}
+                    </SideLink>
+                  ))}
+                </SkillGroup>
               ))
             ) : (
               <EmptyHint>{overview?.skills.length ? "无匹配" : "还没有 skill"}</EmptyHint>
@@ -216,6 +235,35 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function EmptyHint({ children }: { children: React.ReactNode }) {
   return <p className="px-3 py-2 text-xs text-muted">{children}</p>;
+}
+
+function SkillGroup({
+  groupKey,
+  label,
+  forceOpen,
+  children,
+}: {
+  groupKey: string;
+  label: string;
+  forceOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <details className="mb-0.5" open={forceOpen || open}>
+      <summary
+        className="cursor-pointer truncate px-2 py-1 text-[11px] text-muted hover:text-text"
+        title={groupKey === label ? label : groupKey}
+        onClick={(e) => {
+          e.preventDefault();
+          if (!forceOpen) setOpen((v) => !v);
+        }}
+      >
+        {label}
+      </summary>
+      {children}
+    </details>
+  );
 }
 
 function SideLink({

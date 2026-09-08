@@ -2,6 +2,8 @@ export type OverviewSkill = {
   id: string;
   name: string;
   dirty: boolean;
+  groupKey: string;
+  groupLabel: string;
 };
 
 export type OverviewBundle = {
