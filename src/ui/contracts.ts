@@ -1,6 +1,8 @@
 export type OverviewSkill = {
   id: string;
   name: string;
+  description: string;
+  activeBranch: string;
   dirty: boolean;
   groupKey: string;
   groupLabel: string;
@@ -29,7 +31,11 @@ export type SkillVersion = {
 
 export type SkillDetail = {
   id: string;
+  description: string;
+  /** The CLI default remains independent of the branch being viewed. */
   activeBranch: string;
+  branch: string;
+  dirty: boolean;
   path: string;
   manifestPath: string;
   source: { kind: "file" | "github" | "none"; label: string };
@@ -47,7 +53,14 @@ export type SkillDetail = {
 export type BundleDetail = {
   name: string;
   path: string;
-  members: { skill: string; mode: "live" | "pin"; dirty: boolean }[];
+  members: {
+    skill: string;
+    description: string;
+    mode: "live" | "pin";
+    ref: string;
+    dirty: boolean;
+    missing: boolean;
+  }[];
   dirtyLiveCount: number;
   availableSkills: string[];
   piCommand: string;

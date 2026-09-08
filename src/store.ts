@@ -662,7 +662,12 @@ export class Store {
    */
   updateApply(
     localId: string,
-    opts: { branch?: string; force?: boolean } = {},
+    opts: {
+      branch?: string;
+      force?: boolean;
+      expectedCommit?: string;
+      expectedHead?: string;
+    } = {},
   ): { version: VersionMeta; check: CheckResult } {
     return this.withLock(() => {
       const m = this.readManifest(localId);
@@ -670,6 +675,12 @@ export class Store {
       const branch = opts.branch ?? m.activeBranch;
       const st = m.branches[branch];
       if (!st) throw new Error(`branch not found: ${branch}`);
+      if (opts.expectedHead && st.head !== opts.expectedHead) {
+        throw Object.assign(
+          new Error("Local HEAD changed; preview the update again"),
+          { code: "stale_preview" },
+        );
+      }
       if (this.isDirty(localId, branch)) {
         throw new Error(`dirty work on ${branch}; save or discard first`);
       }
@@ -680,6 +691,15 @@ export class Store {
         requestedRef: up.requestedRef,
       });
       try {
+        if (
+          opts.expectedCommit &&
+          snap.resolvedCommit !== opts.expectedCommit
+        ) {
+          throw Object.assign(
+            new Error("Upstream changed; preview the update again"),
+            { code: "stale_preview" },
+          );
+        }
         const upHash = treeHashOf(snap.treeDir);
         const headMeta = this.readVersion(localId, st.head);
         const localMoved = hasLocalDivergence(st);
@@ -712,9 +732,13 @@ export class Store {
             resolvedCommit: snap.resolvedCommit,
           },
         });
-        copyTree(this.versionTree(localId, ver.id), this.workDir(localId, branch), {
-          writable: true,
-        });
+        copyTree(
+          this.versionTree(localId, ver.id),
+          this.workDir(localId, branch),
+          {
+            writable: true,
+          },
+        );
         m.branches[branch] = {
           head: ver.id,
           upstreamBaseVersion: ver.id,
@@ -1081,18 +1105,28 @@ export class Store {
   bundleAdd(
     bundleName: string,
     skillId: string,
-    opts: { pin?: boolean } = {},
+    opts: { pin?: boolean; ref?: string } = {},
   ): void {
     this.withLock(() => {
       assertLocalId(bundleName);
-      if (!this.hasSkill(skillId)) throw new Error(`skill not found: ${skillId}`);
+      if (!this.hasSkill(skillId))
+        throw new Error(`skill not found: ${skillId}`);
+      const m = this.readManifest(skillId);
+      const ref = opts.ref ?? "main";
+      if (!opts.pin && !m.branches[ref])
+        throw new Error(`live ref must be a branch: ${ref}`);
+      const target = opts.pin
+        ? this.versionTree(skillId, this.resolvePinVersion(m, ref))
+        : this.workDir(skillId, ref);
       const dir = this.bundleDir(bundleName);
       ensureDir(dir);
-      const target = this.skillTarget(skillId, { pin: opts.pin });
       const leaf = join(dir, skillId);
       if (this.isSymlink(leaf) || existsSync(leaf)) {
         if (this.isSymlink(leaf)) unlinkSync(leaf);
-        else throw new Error(`bundle member path exists and is not symlink: ${leaf}`);
+        else
+          throw new Error(
+            `bundle member path exists and is not symlink: ${leaf}`,
+          );
       }
       symlinkSync(target, leaf);
     });
@@ -1129,7 +1163,10 @@ export class Store {
     });
   }
 
-  bundleList(): { name: string; members: { skill: string; mode: LinkMode }[] }[] {
+  bundleList(): {
+    name: string;
+    members: { skill: string; mode: LinkMode }[];
+  }[] {
     const root = this.bundlesDir();
     if (!existsSync(root)) return [];
     return readdirSync(root)
@@ -1137,13 +1174,19 @@ export class Store {
       .map((name) => {
         const dir = this.bundleDir(name);
         const members = readdirSync(dir)
-          .filter((skill) => isLocalId(skill) && this.isSymlink(join(dir, skill)))
+          .filter(
+            (skill) => isLocalId(skill) && this.isSymlink(join(dir, skill)),
+          )
           .sort()
           .map((skill) => {
             const leaf = join(dir, skill);
             const target = resolve(dirname(leaf), readlinkSync(leaf));
-            const mode: LinkMode =
-              target === this.workDir(skill, "main") ? "live" : "pin";
+            const live =
+              this.hasSkill(skill) &&
+              Object.keys(this.readManifest(skill).branches).some(
+                (branch) => target === this.workDir(skill, branch),
+              );
+            const mode: LinkMode = live ? "live" : "pin";
             return { skill, mode };
           });
         return { name, members };

@@ -1,258 +1,626 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addBundleMember,
+  createBundle,
   deleteBundle,
   fetchBundle,
+  fetchSkill,
   removeBundleMember,
   setBundleMemberMode,
   type BundleDetail,
+  type Overview,
 } from "./api";
-import { CopyBtn, ModeBadge } from "./Controls";
-import { usePolling } from "./usePolling";
+import {
+  CopyBtn,
+  Dialog,
+  ErrorMessage,
+  shortVersion,
+  skillMark,
+  useNotify,
+} from "./Controls";
+import { CollectionArt, Icon } from "./Icons";
+import { useAction, usePolling } from "./usePolling";
 
-export default function BundlePage({ onChanged }: { onChanged?: () => void }) {
-  const { name } = useParams();
-  const nav = useNavigate();
-  const { data, error, setData, reload, setError } = usePolling(name, fetchBundle, {
-    clearOnError: true,
-  });
-  const [busy, setBusy] = useState(false);
-  const [addPin, setAddPin] = useState(false);
-  const [addFilter, setAddFilter] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  if (error) {
-    return (
-      <p className="text-sm text-danger" role="alert">
-        {error}
-      </p>
-    );
-  }
-  if (!data) return <p className="text-sm text-muted">加载中…</p>;
-
-  const run = async (fn: () => Promise<BundleDetail | void>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await fn();
-      if (next) setData(next);
-      else reload();
-      onChanged?.();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
+export function BundlesPage({
+  overview,
+  onChanged,
+}: {
+  overview: Overview | null;
+  onChanged?: () => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const action = useAction("create-bundle");
+  const navigate = useNavigate();
+  useEffect(() => {
+    document.title = "Bundles · skillcoffer";
+  }, []);
   return (
-    <div className="space-y-4">
-      {/* 1. 身份 */}
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h1 className="text-xl font-semibold tracking-tight">{data.name}</h1>
-          <span className="text-sm text-muted">{data.members.length} 个 skill</span>
+    <div className="bundle-page">
+      <div className="page-head">
+        <div>
+          <h1>
+            Bundles
+            <span className="title-count">
+              {overview?.bundles.length ?? "—"}
+            </span>
+          </h1>
+          <p className="subtitle">为一次会话，挑一组工具。</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-lg border border-border bg-surface px-2 py-1.5 font-mono text-xs">
-            {data.path}
-          </code>
-          <CopyBtn text={data.path} label="复制 path" />
+        <div className="page-actions">
+          <CollectionArt className="bundle-head-art" />
+          <button
+            className="button primary"
+            onClick={() => {
+              action.setError(null);
+              setCreating(true);
+            }}
+          >
+            <Icon name="plus" />
+            新建 Bundle
+          </button>
         </div>
       </div>
-
-      {/* 2. 启动卡 */}
-      <section
-        className="space-y-2 rounded-lg border border-border bg-surface px-4 py-3"
-        aria-label="启动会话"
-      >
-        <p className="text-xs text-muted">启动会话（复制到终端，不在此执行）</p>
-        <pre className="overflow-x-auto font-mono text-sm text-accent">{data.piCommand}</pre>
-        <div className="flex flex-wrap gap-2">
-          <CopyBtn text={data.piCommand} label="复制命令" />
-          <CopyBtn text={data.piPrintCommand} label="复制 --print" />
-        </div>
-        <p className="text-xs text-muted">
-          session 级 <span className="font-mono">--skill</span>，不改全局挂载。工具包 ≠ 挂载。
-        </p>
-        {data.dirtyLiveCount > 0 ? (
-          <p className="text-xs text-warn" role="status">
-            {data.dirtyLiveCount} 个跟随成员有未存档修改，会进入 pi session。
-          </p>
-        ) : null}
-      </section>
-
-      {/* 3. 成员 */}
-      <section className="space-y-2 border-t border-border pt-4">
-        <h2 className="text-xs font-medium text-muted">成员</h2>
-        {data.members.length === 0 ? (
-          <p className="text-sm text-muted">还没有成员，在下方添加 skill。</p>
-        ) : (
-          <ul className="space-y-2">
-            {data.members.map((m) => (
-              <li
-                key={m.skill}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
-              >
-                <span
-                  className={[
-                    "inline-block h-1.5 w-1.5 rounded-full",
-                    m.dirty && m.mode === "live" ? "bg-warn" : "bg-accent",
-                  ].join(" ")}
-                  aria-hidden
-                />
-                <Link
-                  to={`/skills/${encodeURIComponent(m.skill)}`}
-                  className="font-medium text-text hover:text-accent"
-                >
-                  {m.skill}
-                </Link>
-                <ModeBadge mode={m.mode} />
-                {m.dirty && m.mode === "live" ? (
-                  <span className="text-[11px] text-warn">未存档</span>
-                ) : null}
-                <div className="ml-auto flex flex-wrap gap-1">
-                  {m.mode === "live" ? (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      className="rounded-md border border-border px-2 py-0.5 text-[11px] text-muted hover:text-text disabled:opacity-50"
-                      onClick={() => void run(() => setBundleMemberMode(data.name, m.skill, true))}
-                    >
-                      改为固定
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      className="rounded-md border border-border px-2 py-0.5 text-[11px] text-muted hover:text-text disabled:opacity-50"
-                      onClick={() => void run(() => setBundleMemberMode(data.name, m.skill, false))}
-                    >
-                      改为跟随
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="rounded-md border border-border px-2 py-0.5 text-[11px] text-danger/90 hover:border-danger/40 disabled:opacity-50"
-                    onClick={() => void run(() => removeBundleMember(data.name, m.skill))}
-                  >
-                    移出
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* 4. 添加：点一下就加，不走下拉 */}
-      <section className="space-y-2 border-t border-border pt-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-xs font-medium text-muted">添加 skill</h2>
-          <label className="flex items-center gap-1.5 text-xs text-muted">
-            <input
-              type="checkbox"
-              checked={addPin}
-              onChange={(e) => setAddPin(e.target.checked)}
-            />
-            以固定存档加入
-          </label>
-        </div>
-        {data.availableSkills.length === 0 ? (
-          <p className="text-sm text-muted">没有可添加的 skill（都已在包内，或商店为空）。</p>
-        ) : (
-          <>
-            {data.availableSkills.length > 6 ? (
-              <input
-                className="w-full max-w-xs rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-text placeholder:text-muted"
-                placeholder="过滤 skill…"
-                value={addFilter}
-                onChange={(e) => setAddFilter(e.target.value)}
-              />
-            ) : null}
-            <ul className="space-y-1">
-              {data.availableSkills
-                .filter((s) => {
-                  const q = addFilter.trim().toLowerCase();
-                  return !q || s.toLowerCase().includes(q);
-                })
-                .map((s) => (
-                  <li key={s}>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      className="flex w-full items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-left text-sm text-text hover:border-accent/50 disabled:opacity-50"
-                      onClick={() =>
-                        void run(async () => {
-                          const d = await addBundleMember(data.name, s, addPin);
-                          setAddFilter("");
-                          return d;
-                        })
-                      }
-                    >
-                      <span className="min-w-0 flex-1 truncate font-medium">{s}</span>
-                      <span className="shrink-0 text-xs text-accent">
-                        {addPin ? "固定加入" : "跟随加入"}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-            </ul>
-          </>
-        )}
-      </section>
-
-      {/* 5. 危险区 */}
-      <details className="border-t border-border pt-4">
-        <summary className="cursor-pointer text-xs font-medium text-muted">危险区</summary>
-        <div className="mt-2 space-y-2">
-          <p className="text-xs text-muted">删除工具包不会删除 skill 本体。</p>
-          {!confirmDelete ? (
-            <button
-              type="button"
-              className="rounded-md border border-danger/40 px-2 py-1 text-xs text-danger"
-              onClick={() => setConfirmDelete(true)}
+      {!overview ? (
+        <p className="empty">加载中…</p>
+      ) : overview.bundles.length ? (
+        <div className="bundle-index">
+          {overview.bundles.map((bundle) => (
+            <Link
+              className="bundle-index-row"
+              key={bundle.name}
+              to={`/bundles/${encodeURIComponent(bundle.name)}`}
             >
-              删除工具包…
-            </button>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-danger">确认删除 {data.name}？</span>
+              <span className="skill-symbol" aria-hidden="true">
+                <Icon name="terminal" />
+              </span>
+              <span className="skill-info">
+                <strong>{bundle.name}</strong>
+                <span className="member-description">
+                  {bundle.memberCount} skills
+                </span>
+              </span>
+              {bundle.dirtyLiveCount ? (
+                <span className="pill dirty">
+                  {bundle.dirtyLiveCount} modified live
+                </span>
+              ) : null}
+              <Icon name="arrow" />
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <div className="empty">
+          还没有 Bundle。
+          <button className="text-button" onClick={() => setCreating(true)}>
+            创建第一个
+          </button>
+        </div>
+      )}
+      {creating ? (
+        <Dialog title="新建 Bundle" onClose={() => setCreating(false)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!name.trim()) return;
+              void action.run(
+                () => createBundle(name.trim()),
+                (bundle) => {
+                  onChanged?.();
+                  setCreating(false);
+                  navigate(`/bundles/${encodeURIComponent(bundle.name)}`);
+                },
+              );
+            }}
+          >
+            <label htmlFor="bundle-name">Name</label>
+            <input
+              type="text"
+              id="bundle-name"
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="research"
+              required
+              disabled={action.busy}
+            />
+            <ErrorMessage error={action.error} />
+            <div className="dialog-actions">
               <button
                 type="button"
-                disabled={busy}
-                className="rounded-md bg-danger px-2 py-1 text-xs font-medium text-bg disabled:opacity-50"
-                onClick={() =>
-                  void (async () => {
-                    setBusy(true);
-                    try {
-                      await deleteBundle(data.name);
-                      onChanged?.();
-                      nav("/");
-                    } catch (e: unknown) {
-                      setError(e instanceof Error ? e.message : String(e));
-                    } finally {
-                      setBusy(false);
-                      setConfirmDelete(false);
-                    }
-                  })()
-                }
-              >
-                确认删除
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-border px-2 py-1 text-xs text-muted"
-                onClick={() => setConfirmDelete(false)}
+                className="button"
+                onClick={() => setCreating(false)}
               >
                 取消
               </button>
+              <button
+                className="button primary"
+                type="submit"
+                disabled={action.busy || !name.trim()}
+              >
+                {action.busy ? "Creating…" : "Create"}
+              </button>
             </div>
-          )}
-        </div>
-      </details>
+          </form>
+        </Dialog>
+      ) : null}
     </div>
+  );
+}
+export default function BundlePage({
+  overview,
+  onChanged,
+}: {
+  overview: Overview | null;
+  onChanged?: () => void;
+}) {
+  const { name = "" } = useParams();
+  return (
+    <BundleContent
+      key={name}
+      name={name}
+      overview={overview}
+      onChanged={onChanged}
+    />
+  );
+}
+function BundleContent({
+  name,
+  overview,
+  onChanged,
+}: {
+  name: string;
+  overview: Overview | null;
+  onChanged?: () => void;
+}) {
+  const action = useAction(name);
+  const resource = usePolling(name, fetchBundle, { paused: action.busy });
+  const [modal, setModal] = useState<"add" | "menu" | "delete" | null>(null);
+  const [editing, setEditing] = useState<
+    BundleDetail["members"][number] | null
+  >(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [addPin, setAddPin] = useState(false);
+  const notify = useNotify();
+  const navigate = useNavigate();
+  const data = resource.data;
+  useEffect(() => {
+    document.title = `${name} · skillcoffer`;
+  }, [name]);
+  const update = (next: BundleDetail) => {
+    resource.setData(next);
+    onChanged?.();
+  };
+  const open = (next: typeof modal) => {
+    action.setError(null);
+    setModal(next);
+  };
+  if (!data)
+    return (
+      <>
+        <ErrorMessage error={resource.error} retry={resource.reload} />
+        <p className="empty">{resource.error ? "" : "加载中…"}</p>
+      </>
+    );
+  const live = data.members.filter((member) => member.mode === "live").length;
+  const remove = (member: BundleDetail["members"][number]) => {
+    void action.run(
+      () => removeBundleMember(name, member.skill),
+      (next) => {
+        update(next);
+        notify(`已移出 ${member.skill}`, {
+          label: "撤销",
+          onClick: () => {
+            void addBundleMember(
+              name,
+              member.skill,
+              member.mode === "pin",
+              member.ref,
+            )
+              .then((restored) => {
+                update(restored);
+                notify("已恢复成员");
+              })
+              .catch((e: unknown) =>
+                notify(e instanceof Error ? e.message : String(e)),
+              );
+          },
+        });
+      },
+    );
+  };
+  return (
+    <div className="bundle-page">
+      <div className="breadcrumb">
+        <Link to="/bundles">
+          <Icon name="back" /> Bundles
+        </Link>
+      </div>
+      <div className="page-head bundle-detail-head">
+        <div>
+          <h1>
+            {data.name}
+            <span className="title-count">{data.members.length}</span>
+          </h1>
+          <p className="subtitle">
+            {live} live · {data.members.length - live} pinned
+          </p>
+        </div>
+        <div className="page-actions">
+          <CollectionArt className="bundle-head-art" />
+          <button
+            className="icon-button"
+            aria-label="Bundle 更多操作"
+            onClick={() => open("menu")}
+          >
+            <Icon name="more" />
+          </button>
+        </div>
+      </div>
+      <ErrorMessage
+        error={resource.error || (!modal && !editing ? action.error : null)}
+        retry={resource.reload}
+      />
+      <div className="bundle-strip">
+        <p>Members</p>
+        <button
+          className="button"
+          disabled={action.busy}
+          onClick={() => open("add")}
+        >
+          <Icon name="plus" />
+          添加成员
+        </button>
+      </div>
+      {data.members.length ? (
+        data.members.map((member) => (
+          <article className="member" key={member.skill}>
+            <span className="skill-symbol" aria-hidden="true">
+              {skillMark(member.skill)}
+            </span>
+            <div className="member-info">
+              <Link
+                className="skill-link"
+                to={`/skills/${encodeURIComponent(member.skill)}`}
+              >
+                {member.skill}
+              </Link>
+              <p className="member-description" title={member.description}>
+                {member.description}
+              </p>
+            </div>
+            <div className="mode-toggle" aria-label={`${member.skill} 模式`}>
+              {(["live", "pin"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  aria-pressed={member.mode === mode}
+                  className={member.mode === mode ? "active" : ""}
+                  disabled={action.busy || member.missing}
+                  onClick={() => {
+                    if (mode === member.mode) return;
+                    void action.run(
+                      () =>
+                        setBundleMemberMode(
+                          name,
+                          member.skill,
+                          mode === "pin",
+                          mode === "pin" ? member.ref : "main",
+                        ),
+                      update,
+                    );
+                  }}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <button
+              className={`member-ref ${member.dirty ? "modified-ref" : ""}`}
+              title={`${member.ref}${member.dirty ? " · modified" : ""}`}
+              disabled={action.busy || member.missing}
+              onClick={() => {
+                action.setError(null);
+                setEditing(member);
+              }}
+            >
+              @{member.mode === "pin" ? shortVersion(member.ref) : member.ref}
+              {member.missing ? " · missing" : member.dirty ? " *" : ""}
+            </button>
+            <button
+              className="icon-button remove"
+              aria-label={`移出 ${member.skill}`}
+              disabled={action.busy}
+              onClick={() => remove(member)}
+            >
+              <Icon name="close" />
+            </button>
+          </article>
+        ))
+      ) : (
+        <p className="bundle-empty">还没有成员。</p>
+      )}
+      <div className="command-bar">
+        <span className="prompt">$</span>
+        <code>{data.piCommand}</code>
+        <CopyBtn text={data.piCommand} />
+      </div>
+      <div className="bundle-count">
+        {data.dirtyLiveCount ? (
+          <span className="modified-ref">
+            {data.dirtyLiveCount} modified live
+            <span className="divider">/</span>
+          </span>
+        ) : null}
+        <CopyBtn
+          text={data.piPrintCommand}
+          label="Copy --print"
+          className="text-button"
+        />
+      </div>
+      {modal ? (
+        <Dialog
+          title={
+            modal === "add"
+              ? "添加成员"
+              : modal === "delete"
+                ? `删除 ${data.name}`
+                : data.name
+          }
+          onClose={() => setModal(null)}
+        >
+          <ErrorMessage error={action.error} />
+          {modal === "menu" ? (
+            <>
+              <div className="dialog-path">{data.path}</div>
+              <CopyBtn text={data.path} label="Path" />
+              <div className="menu-divider" />
+              <button
+                className="menu-item danger-text"
+                onClick={() => open("delete")}
+              >
+                删除 Bundle
+              </button>
+            </>
+          ) : null}
+          {modal === "delete" ? (
+            <>
+              <p>删除此 Bundle，保留 Skill 本体。</p>
+              <div className="dialog-actions">
+                <button className="button" onClick={() => setModal(null)}>
+                  取消
+                </button>
+                <button
+                  className="button danger-button"
+                  disabled={action.busy}
+                  onClick={() => {
+                    void action.run(
+                      () => deleteBundle(name),
+                      () => {
+                        onChanged?.();
+                        navigate("/bundles");
+                        notify(`Deleted ${name}`);
+                      },
+                    );
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </>
+          ) : null}
+          {modal === "add" ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!selected.length) return;
+                void action.run(
+                  async () => {
+                    let next: BundleDetail | null = null;
+                    const added: string[] = [];
+                    const failed: string[] = [];
+                    for (const skill of selected) {
+                      try {
+                        next = await addBundleMember(name, skill, addPin);
+                        added.push(skill);
+                      } catch (cause) {
+                        failed.push(
+                          `${skill}: ${cause instanceof Error ? cause.message : String(cause)}`,
+                        );
+                      }
+                    }
+                    return { next, added, failed };
+                  },
+                  (result) => {
+                    if (result.next) update(result.next);
+                    setSelected((before) =>
+                      before.filter((id) => !result.added.includes(id)),
+                    );
+                    if (result.failed.length)
+                      action.setError(result.failed.join("\n"));
+                    else {
+                      setModal(null);
+                      setQuery("");
+                    }
+                    if (result.added.length)
+                      notify(`Added ${result.added.length} skills`);
+                  },
+                );
+              }}
+            >
+              <label className="sr-only" htmlFor="member-search">
+                搜索成员
+              </label>
+              <input
+                id="member-search"
+                type="text"
+                placeholder="Find a skill…"
+                autoFocus
+                value={query}
+                disabled={action.busy}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <div className="member-picker">
+                {data.availableSkills
+                  .filter((id) =>
+                    `${id} ${overview?.skills.find((s) => s.id === id)?.description ?? ""}`
+                      .toLowerCase()
+                      .includes(query.toLowerCase()),
+                  )
+                  .map((id) => (
+                    <label className="pick" key={id}>
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(id)}
+                        disabled={action.busy}
+                        onChange={(e) =>
+                          setSelected((before) =>
+                            e.target.checked
+                              ? [...before, id]
+                              : before.filter((value) => value !== id),
+                          )
+                        }
+                      />
+                      <span>
+                        {id}
+                        <small>
+                          {
+                            overview?.skills.find((s) => s.id === id)
+                              ?.description
+                          }
+                        </small>
+                      </span>
+                    </label>
+                  ))}
+                {!data.availableSkills.length ? (
+                  <p className="empty">全部 Skill 已加入。</p>
+                ) : null}
+              </div>
+              <label className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={addPin}
+                  disabled={action.busy}
+                  onChange={(e) => setAddPin(e.target.checked)}
+                />
+                Pin to HEAD
+              </label>
+              <div className="dialog-actions">
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => setModal(null)}
+                >
+                  取消
+                </button>
+                <button
+                  className="button primary"
+                  type="submit"
+                  disabled={action.busy || !selected.length}
+                >
+                  {action.busy
+                    ? "Adding…"
+                    : `Add${selected.length ? ` ${selected.length}` : ""}`}
+                </button>
+              </div>
+            </form>
+          ) : null}
+        </Dialog>
+      ) : null}
+      {editing ? (
+        <MemberRef
+          key={editing.skill}
+          member={editing}
+          busy={action.busy}
+          error={action.error}
+          onClose={() => setEditing(null)}
+          onSave={(pin, ref) => {
+            void action.run(
+              () => setBundleMemberMode(name, editing.skill, pin, ref),
+              (next) => {
+                update(next);
+                setEditing(null);
+                notify("Member updated");
+              },
+            );
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+function MemberRef({
+  member,
+  busy,
+  error,
+  onClose,
+  onSave,
+}: {
+  member: BundleDetail["members"][number];
+  busy: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSave: (pin: boolean, ref: string) => void;
+}) {
+  const resource = usePolling(member.skill, fetchSkill, { intervalMs: 0 });
+  const [pin, setPin] = useState(member.mode === "pin");
+  const [ref, setRef] = useState(member.ref);
+  return (
+    <Dialog title={member.skill} onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave(pin, ref);
+        }}
+      >
+        <ErrorMessage error={error || resource.error} retry={resource.reload} />
+        <label className="form-field">
+          Mode
+          <select
+            value={pin ? "pin" : "live"}
+            disabled={busy}
+            onChange={(e) => {
+              setPin(e.target.value === "pin");
+              setRef("main");
+            }}
+          >
+            <option value="live">live</option>
+            <option value="pin">pin</option>
+          </select>
+        </label>
+        <label className="form-field">
+          Ref
+          <select
+            disabled={busy || !resource.data}
+            value={ref}
+            onChange={(e) => setRef(e.target.value)}
+          >
+            {resource.data?.branches.map((b) => (
+              <option key={b.name}>{b.name}</option>
+            ))}
+            {pin
+              ? resource.data?.versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {shortVersion(v.id)} · {v.note || v.source}
+                  </option>
+                ))
+              : null}
+          </select>
+        </label>
+        <div className="dialog-actions">
+          <button className="button" type="button" onClick={onClose}>
+            取消
+          </button>
+          <button
+            className="button primary"
+            type="submit"
+            disabled={busy || !resource.data}
+          >
+            Save
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

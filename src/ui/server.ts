@@ -1,7 +1,27 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, lstatSync, readFileSync, readlinkSync, readdirSync, statSync } from "node:fs";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readlinkSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { dirname, extname, join, normalize, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  join,
+  normalize,
+  resolve,
+  sep,
+} from "node:path";
+import { parse as parseYaml } from "yaml";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { looksLikeGithubSpec } from "../github.js";
@@ -10,7 +30,6 @@ import {
   agentPresetPath,
   defaultHome,
   treeHashOf,
-  type CheckResult,
   type Manifest,
 } from "../store.js";
 import type {
@@ -23,7 +42,10 @@ import type {
   SkillDetail,
 } from "./contracts.js";
 
-function overviewGroup(m: Manifest, home = homedir()): Pick<OverviewSkill, "groupKey" | "groupLabel"> {
+function overviewGroup(
+  m: Manifest,
+  home = homedir(),
+): Pick<OverviewSkill, "groupKey" | "groupLabel"> {
   if (m.upstream?.remote === "github") {
     return { groupKey: m.upstream.repo, groupLabel: m.upstream.repo };
   }
@@ -31,40 +53,100 @@ function overviewGroup(m: Manifest, home = homedir()): Pick<OverviewSkill, "grou
     const dir = dirname(m.upstream.sourcePath);
     const prefix = home.endsWith(sep) ? home : home + sep;
     const groupLabel =
-      dir === home ? "~" : dir.startsWith(prefix) ? `~${dir.slice(home.length)}` : dir;
+      dir === home
+        ? "~"
+        : dir.startsWith(prefix)
+          ? `~${dir.slice(home.length)}`
+          : dir;
     return { groupKey: dir, groupLabel };
   }
   return { groupKey: "本地", groupLabel: "本地" };
+}
+
+function skillDescription(root: string): string {
+  try {
+    const path = join(root, "SKILL.md");
+    if (lstatSync(path).isSymbolicLink()) return "";
+    const text = readFileSync(path, "utf8").slice(0, 65536);
+    const header = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
+    const metadata = header ? parseYaml(header, { maxAliasCount: 10 }) : null;
+    return typeof metadata?.description === "string"
+      ? metadata.description.replace(/\s+/g, " ").trim().slice(0, 800)
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+function bundleMember(
+  store: Store,
+  name: string,
+  skill: string,
+): BundleDetail["members"][number] {
+  const leaf = join(store.bundleDir(name), skill);
+  const target = resolve(dirname(leaf), readlinkSync(leaf));
+  if (!store.hasSkill(skill))
+    return {
+      skill,
+      description: "",
+      mode: "pin",
+      ref: "unknown",
+      dirty: false,
+      missing: true,
+    };
+  const status = store.status(skill);
+  const branch = Object.keys(status.manifest.branches).find(
+    (b) => target === store.workDir(skill, b),
+  );
+  const version = status.versions.find(
+    (v) => target === store.versionTree(skill, v.id),
+  );
+  return {
+    skill,
+    description: skillDescription(target),
+    mode: branch ? "live" : "pin",
+    ref: branch ?? version?.id ?? basename(dirname(target)),
+    dirty: branch ? Boolean(status.dirty[branch]) : false,
+    missing: !existsSync(target) || (!branch && !version),
+  };
 }
 
 export function buildOverview(store: Store): Overview {
   const skills: OverviewSkill[] = store.list().map((m) => ({
     id: m.localId,
     name: m.name,
+    description: skillDescription(store.workDir(m.localId, m.activeBranch)),
+    activeBranch: m.activeBranch,
     dirty: Boolean(store.status(m.localId).dirty[m.activeBranch]),
     ...overviewGroup(m),
   }));
 
-  const skillDirty = new Map(skills.map((s) => [s.id, s.dirty]));
-  const bundles: OverviewBundle[] = store.bundleList().map((b) => {
-    let dirtyLiveCount = 0;
-    for (const mem of b.members) {
-      if (mem.mode === "live" && skillDirty.get(mem.skill)) dirtyLiveCount++;
-    }
-    return {
-      name: b.name,
-      memberCount: b.members.length,
-      dirtyLiveCount,
-    };
-  });
-
+  const bundles: OverviewBundle[] = store.bundleList().map((b) => ({
+    name: b.name,
+    memberCount: b.members.length,
+    dirtyLiveCount: b.members.filter(
+      (mem) => bundleMember(store, b.name, mem.skill).dirty,
+    ).length,
+  }));
   return { home: store.home, skills, bundles };
 }
 
-export function buildSkillDetail(store: Store, localId: string): SkillDetail {
-  if (!store.hasSkill(localId)) throw Object.assign(new Error(`skill not found: ${localId}`), { code: "not_found" });
+export function buildSkillDetail(
+  store: Store,
+  localId: string,
+  selectedBranch?: string,
+): SkillDetail {
+  if (!store.hasSkill(localId))
+    throw Object.assign(new Error(`skill not found: ${localId}`), {
+      code: "not_found",
+    });
   const { manifest: m, dirty, versions } = store.status(localId);
   const activeBranch = m.activeBranch;
+  const branch = selectedBranch ?? activeBranch;
+  if (!m.branches[branch])
+    throw Object.assign(new Error(`branch not found: ${branch}`), {
+      code: "not_found",
+    });
   const activeDirty = Boolean(dirty[activeBranch]);
   let liveCount = 0;
   let pinCount = 0;
@@ -84,7 +166,9 @@ export function buildSkillDetail(store: Store, localId: string): SkillDetail {
     };
   }
 
-  const sorted = [...versions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const sorted = [...versions].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
   const mapVer = (v: (typeof versions)[number]) => {
     const heads: string[] = [];
     for (const [b, st] of Object.entries(m.branches)) {
@@ -99,9 +183,9 @@ export function buildSkillDetail(store: Store, localId: string): SkillDetail {
       heads,
     };
   };
-  const allVersions = sorted.slice(0, 100).map(mapVer);
+  const allVersions = sorted.map(mapVer);
 
-  const headId = m.branches[activeBranch]?.head;
+  const headId = m.branches[branch]?.head;
   const headMeta = headId ? versions.find((v) => v.id === headId) : undefined;
 
   const bundles = store
@@ -111,8 +195,11 @@ export function buildSkillDetail(store: Store, localId: string): SkillDetail {
 
   return {
     id: m.localId,
+    description: skillDescription(store.workDir(localId, branch)),
     activeBranch,
-    path: store.pathOf(localId),
+    branch,
+    dirty: Boolean(dirty[branch]),
+    path: store.pathOf(localId, branch),
     manifestPath: store.manifestPath(localId),
     source,
     activeDirty,
@@ -133,7 +220,10 @@ export function buildSkillDetail(store: Store, localId: string): SkillDetail {
 }
 
 function runDiffText(left: string, right: string): string {
-  const r = spawnSync("diff", ["-ruN", left, right], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+  const r = spawnSync("diff", ["-ruN", left, right], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
   if (r.error) throw r.error;
   if (r.status === 0) return "(no diff — 两边一致)";
   if (r.status === 1) return r.stdout || "(diff empty)";
@@ -156,7 +246,10 @@ export function buildDoctor(store: Store): DoctorReport {
       } else {
         try {
           const meta = JSON.parse(
-            readFileSync(join(store.versionDir(m.localId, st.head), "version.json"), "utf8"),
+            readFileSync(
+              join(store.versionDir(m.localId, st.head), "version.json"),
+              "utf8",
+            ),
           ) as { treeHash: string };
           const th = treeHashOf(tree);
           if (th !== meta.treeHash) {
@@ -257,19 +350,32 @@ export function resolveSkillTree(
   store: Store,
   localId: string,
   ref: string,
+  selectedBranch?: string,
 ): { root: string; label: string } {
   const { manifest: m } = store.status(localId);
-  const branch = m.activeBranch;
+  const branch = selectedBranch ?? m.activeBranch;
+  if (!m.branches[branch])
+    throw Object.assign(new Error(`branch not found: ${branch}`), {
+      code: "not_found",
+    });
   if (ref === "work" || ref === "" || ref === "active") {
-    return { root: store.workDir(localId, branch), label: `工作区 (${branch})` };
+    return {
+      root: store.workDir(localId, branch),
+      label: `工作区 (${branch})`,
+    };
   }
   if (ref === "head") {
     const head = m.branches[branch]?.head;
     if (!head) throw Object.assign(new Error("no HEAD"), { code: "not_found" });
-    return { root: store.versionTree(localId, head), label: `当前存档 ${head}` };
+    return {
+      root: store.versionTree(localId, head),
+      label: `当前存档 ${head}`,
+    };
   }
   if (!existsSync(store.versionTree(localId, ref))) {
-    throw Object.assign(new Error(`version not found: ${ref}`), { code: "not_found" });
+    throw Object.assign(new Error(`version not found: ${ref}`), {
+      code: "not_found",
+    });
   }
   return { root: store.versionTree(localId, ref), label: `存档 ${ref}` };
 }
@@ -286,11 +392,14 @@ export function listSkillFiles(
   store: Store,
   localId: string,
   ref = "work",
+  branch?: string,
 ): { ref: string; label: string; files: { path: string; size: number }[] } {
   if (!store.hasSkill(localId)) {
-    throw Object.assign(new Error(`skill not found: ${localId}`), { code: "not_found" });
+    throw Object.assign(new Error(`skill not found: ${localId}`), {
+      code: "not_found",
+    });
   }
-  const { root, label } = resolveSkillTree(store, localId, ref);
+  const { root, label } = resolveSkillTree(store, localId, ref, branch);
   const files: { path: string; size: number }[] = [];
   const walk = (dir: string, prefix: string) => {
     if (!existsSync(dir)) return;
@@ -320,6 +429,7 @@ export function readSkillFile(
   localId: string,
   relPath: string,
   ref = "work",
+  branch?: string,
 ): {
   ref: string;
   label: string;
@@ -330,17 +440,26 @@ export function readSkillFile(
   content: string | null;
 } {
   if (!store.hasSkill(localId)) {
-    throw Object.assign(new Error(`skill not found: ${localId}`), { code: "not_found" });
+    throw Object.assign(new Error(`skill not found: ${localId}`), {
+      code: "not_found",
+    });
   }
   const rel = safeRelPath(relPath);
-  const { root, label } = resolveSkillTree(store, localId, ref);
+  const { root, label } = resolveSkillTree(store, localId, ref, branch);
   const full = join(root, ...rel.split("/"));
   const rootResolved = resolve(root) + sep;
-  if (!resolve(full).startsWith(rootResolved) && resolve(full) !== resolve(root)) {
-    throw Object.assign(new Error("path escapes tree"), { code: "bad_request" });
+  if (
+    !resolve(full).startsWith(rootResolved) &&
+    resolve(full) !== resolve(root)
+  ) {
+    throw Object.assign(new Error("path escapes tree"), {
+      code: "bad_request",
+    });
   }
   if (!existsSync(full) || !statSync(full).isFile()) {
-    throw Object.assign(new Error(`file not found: ${rel}`), { code: "not_found" });
+    throw Object.assign(new Error(`file not found: ${rel}`), {
+      code: "not_found",
+    });
   }
   const size = statSync(full).size;
   const buf = readFileSync(full);
@@ -348,7 +467,15 @@ export function readSkillFile(
   const sample = buf.subarray(0, Math.min(buf.length, 8000));
   const binary = sample.includes(0);
   if (binary) {
-    return { ref, label, path: rel, size, binary: true, truncated: false, content: null };
+    return {
+      ref,
+      label,
+      path: rel,
+      size,
+      binary: true,
+      truncated: false,
+      content: null,
+    };
   }
   const truncated = size > MAX_VIEW_BYTES;
   const slice = truncated ? buf.subarray(0, MAX_VIEW_BYTES) : buf;
@@ -368,19 +495,35 @@ export function buildDiff(
   localId: string,
   opts: {
     upstream?: boolean;
+    branch?: string;
     /** left side version id, or "head"; default head when comparing to work */
     version?: string;
     left?: string;
     right?: string;
     path?: string;
   } = {},
-): { text: string; leftLabel: string; rightLabel: string; path?: string } {
+): {
+  text: string;
+  leftLabel: string;
+  rightLabel: string;
+  path?: string;
+  resolvedCommit?: string;
+} {
   const { manifest: m } = store.status(localId);
-  const branch = m.activeBranch;
+  const branch = opts.branch ?? m.activeBranch;
+  if (!m.branches[branch])
+    throw Object.assign(new Error(`branch not found: ${branch}`), {
+      code: "not_found",
+    });
   const work = store.workDir(localId, branch);
   const filePath = opts.path ? safeRelPath(opts.path) : undefined;
 
-  const pair = (leftRoot: string, rightRoot: string, leftLabel: string, rightLabel: string) => {
+  const pair = (
+    leftRoot: string,
+    rightRoot: string,
+    leftLabel: string,
+    rightLabel: string,
+  ) => {
     const L = filePath ? join(leftRoot, ...filePath.split("/")) : leftRoot;
     const R = filePath ? join(rightRoot, ...filePath.split("/")) : rightRoot;
     // missing file: diff still works with -N if parent exists; if neither, message
@@ -401,25 +544,31 @@ export function buildDiff(
   };
 
   if (opts.upstream) {
-    return store.withUpstreamTree(localId, (treeDir, snap) =>
-      pair(
+    return store.withUpstreamTree(localId, (treeDir, snap) => ({
+      ...pair(
         treeDir,
         work,
         `上游 ${snap.repo}@${snap.resolvedCommit.slice(0, 7)}`,
         `工作区 (${branch})`,
       ),
-    );
+      resolvedCommit: snap.resolvedCommit,
+    }));
   }
 
   // explicit left/right refs: work | head | versionId
   if (opts.left || opts.right) {
-    const left = resolveSkillTree(store, localId, opts.left ?? "head");
-    const right = resolveSkillTree(store, localId, opts.right ?? "work");
+    const left = resolveSkillTree(store, localId, opts.left ?? "head", branch);
+    const right = resolveSkillTree(
+      store,
+      localId,
+      opts.right ?? "work",
+      branch,
+    );
     return pair(left.root, right.root, left.label, right.label);
   }
 
   if (opts.version) {
-    const left = resolveSkillTree(store, localId, opts.version);
+    const left = resolveSkillTree(store, localId, opts.version, branch);
     return pair(left.root, work, left.label, `工作区 (${branch})`);
   }
 
@@ -434,17 +583,14 @@ export function buildDiff(
 
 export function buildBundleDetail(store: Store, name: string): BundleDetail {
   if (!store.hasBundle(name)) {
-    throw Object.assign(new Error(`bundle not found: ${name}`), { code: "not_found" });
+    throw Object.assign(new Error(`bundle not found: ${name}`), {
+      code: "not_found",
+    });
   }
   const listed = store.bundleList().find((b) => b.name === name);
-  const members = (listed?.members ?? []).map((mem) => {
-    let dirty = false;
-    if (store.hasSkill(mem.skill)) {
-      const st = store.status(mem.skill);
-      dirty = Boolean(st.dirty[st.manifest.activeBranch]);
-    }
-    return { skill: mem.skill, mode: mem.mode, dirty };
-  });
+  const members = (listed?.members ?? []).map((mem) =>
+    bundleMember(store, name, mem.skill),
+  );
   const memberIds = new Set(members.map((m) => m.skill));
   const availableSkills = store
     .list()
@@ -452,14 +598,18 @@ export function buildBundleDetail(store: Store, name: string): BundleDetail {
     .filter((id) => !memberIds.has(id));
   let dirtyLiveCount = 0;
   for (const m of members) if (m.mode === "live" && m.dirty) dirtyLiveCount++;
+  const prefix =
+    resolve(store.home) === join(homedir(), ".skillcoffer")
+      ? ""
+      : `SKILLCOFFER_HOME='${store.home.replace(/'/g, "'\\''")}' `;
   return {
     name,
     path: store.bundlePath(name),
     members,
     dirtyLiveCount,
     availableSkills,
-    piCommand: `skillcoffer pi ${name}`,
-    piPrintCommand: `skillcoffer pi ${name} --print`,
+    piCommand: `${prefix}skillcoffer pi ${name}`,
+    piPrintCommand: `${prefix}skillcoffer pi ${name} --print`,
   };
 }
 
@@ -512,7 +662,11 @@ function safeJoin(root: string, reqPath: string): string | null {
   return full;
 }
 
-function serveStatic(res: ServerResponse, uiRoot: string, urlPath: string): void {
+function serveStatic(
+  res: ServerResponse,
+  uiRoot: string,
+  urlPath: string,
+): void {
   if (!existsSync(uiRoot)) {
     sendJson(res, 503, {
       error: "UI assets not built. Run: npm run build:ui",
@@ -531,7 +685,10 @@ function serveStatic(res: ServerResponse, uiRoot: string, urlPath: string): void
     // SPA fallback
     filePath = join(uiRoot, "index.html");
     if (!existsSync(filePath)) {
-      sendJson(res, 503, { error: "UI index.html missing", code: "ui_not_built" });
+      sendJson(res, 503, {
+        error: "UI index.html missing",
+        code: "ui_not_built",
+      });
       return;
     }
   }
@@ -609,16 +766,26 @@ async function handleApi(
       const result = looksLikeGithubSpec(source)
         ? store.addFromGithub(source)
         : store.addFromFile(source);
+      const failed = [...result.failed];
       const skills = result.added.map((m) => {
         if (body.agent) {
-          store.link(m.localId, agentPresetPath(body.agent, m.localId), { ref: "main" });
+          try {
+            store.link(m.localId, agentPresetPath(body.agent, m.localId), {
+              ref: "main",
+            });
+          } catch (e) {
+            failed.push({
+              path: m.localId,
+              error: `Installed; link failed: ${e instanceof Error ? e.message : String(e)}`,
+            });
+          }
         }
         return buildSkillDetail(store, m.localId);
       });
       sendJson(res, 201, {
         skills,
         skipped: result.skipped,
-        failed: result.failed,
+        failed,
         overview: buildOverview(store),
       });
     } catch (e) {
@@ -632,7 +799,16 @@ async function handleApi(
     const id = decodeURIComponent(skillFiles[1]);
     try {
       const ref = url.searchParams.get("ref") ?? "work";
-      sendJson(res, 200, listSkillFiles(store, id, ref));
+      sendJson(
+        res,
+        200,
+        listSkillFiles(
+          store,
+          id,
+          ref,
+          url.searchParams.get("branch") ?? undefined,
+        ),
+      );
     } catch (e) {
       apiError(res, e);
     }
@@ -649,7 +825,17 @@ async function handleApi(
         sendJson(res, 400, { error: "path required", code: "bad_request" });
         return;
       }
-      sendJson(res, 200, readSkillFile(store, id, rel, ref));
+      sendJson(
+        res,
+        200,
+        readSkillFile(
+          store,
+          id,
+          rel,
+          ref,
+          url.searchParams.get("branch") ?? undefined,
+        ),
+      );
     } catch (e) {
       apiError(res, e);
     }
@@ -665,7 +851,18 @@ async function handleApi(
       const left = url.searchParams.get("left") ?? undefined;
       const right = url.searchParams.get("right") ?? undefined;
       const filePath = url.searchParams.get("path") ?? undefined;
-      sendJson(res, 200, buildDiff(store, id, { upstream, version, left, right, path: filePath }));
+      sendJson(
+        res,
+        200,
+        buildDiff(store, id, {
+          upstream,
+          version,
+          left,
+          right,
+          path: filePath,
+          branch: url.searchParams.get("branch") ?? undefined,
+        }),
+      );
     } catch (e) {
       apiError(res, e);
     }
@@ -679,83 +876,90 @@ async function handleApi(
     const id = decodeURIComponent(skillAction[1]);
     const action = skillAction[2];
     const body = parseJsonBody(await readBody(req)) as Record<string, unknown>;
+    const branch = typeof body.branch === "string" ? body.branch : undefined;
+    const detail = () => buildSkillDetail(store, id, branch);
     try {
+      if (branch && !store.status(id).manifest.branches[branch])
+        throw new Error(`branch not found: ${branch}`);
       if (action === "save") {
         const note = typeof body.note === "string" ? body.note : undefined;
-        const ver = store.save(id, { note });
-        sendJson(res, 200, { version: ver, skill: buildSkillDetail(store, id) });
+        const ver = store.save(id, { note, branch });
+        sendJson(res, 200, { version: ver, skill: detail() });
         return;
       }
       if (action === "discard") {
-        store.discard(id);
-        sendJson(res, 200, { skill: buildSkillDetail(store, id) });
+        store.discard(id, { branch });
+        sendJson(res, 200, { skill: detail() });
         return;
       }
       if (action === "link") {
         const agent = typeof body.agent === "string" ? body.agent : undefined;
         const toRaw = typeof body.to === "string" ? body.to : undefined;
-        const pin = Boolean(body.pin);
-        const force = Boolean(body.force);
         const to = toRaw || (agent ? agentPresetPath(agent, id) : "");
-        if (!to) {
-          sendJson(res, 400, { error: "to or agent required", code: "bad_request" });
-          return;
-        }
-        const rec = store.link(id, to, { pin, force });
-        sendJson(res, 200, { link: rec, skill: buildSkillDetail(store, id) });
+        if (!to) throw new Error("to or agent required");
+        const rec = store.link(id, to, {
+          pin: Boolean(body.pin),
+          force: Boolean(body.force),
+          ref: typeof body.ref === "string" ? body.ref : branch,
+          repin: Boolean(body.repin),
+        });
+        sendJson(res, 200, { link: rec, skill: detail() });
         return;
       }
       if (action === "unlink") {
         const to = typeof body.to === "string" ? body.to : "";
-        if (!to) {
-          sendJson(res, 400, { error: "to required", code: "bad_request" });
-          return;
-        }
+        if (!to) throw new Error("to required");
         store.unlink(id, to);
-        sendJson(res, 200, { skill: buildSkillDetail(store, id) });
+        sendJson(res, 200, { skill: detail() });
         return;
       }
       if (action === "check") {
-        const check: CheckResult = store.check(id);
-        sendJson(res, 200, { check, skill: buildSkillDetail(store, id) });
-        return;
-      }
-      if (action === "update") {
-        const apply = Boolean(body.apply);
-        const force = Boolean(body.force);
-        if (!apply) {
-          const check = store.check(id);
-          let diff: { text: string; leftLabel: string; rightLabel: string } | null = null;
-          if (check.status === "upstream-changed" || check.status === "local-diverged") {
-            try {
-              diff = buildDiff(store, id, { upstream: true });
-            } catch (e) {
-              diff = {
-                text: e instanceof Error ? e.message : String(e),
-                leftLabel: "upstream",
-                rightLabel: "work",
-              };
-            }
-          }
-          sendJson(res, 200, { check, diff, skill: buildSkillDetail(store, id) });
-          return;
-        }
-        const { version, check } = store.updateApply(id, { force });
         sendJson(res, 200, {
-          version,
-          check,
-          skill: buildSkillDetail(store, id),
+          check: store.check(id, { branch }),
+          skill: detail(),
         });
         return;
       }
-      if (action === "restore") {
-        const versionId = typeof body.versionId === "string" ? body.versionId : "";
-        if (!versionId) {
-          sendJson(res, 400, { error: "versionId required", code: "bad_request" });
+      if (action === "update") {
+        if (!body.apply) {
+          const check = store.check(id, { branch });
+          let diff: ReturnType<typeof buildDiff> | null = null;
+          if (
+            check.status === "upstream-changed" ||
+            check.status === "local-diverged"
+          ) {
+            diff = buildDiff(store, id, { upstream: true, branch });
+            if (diff.resolvedCommit !== check.resolvedCommit) {
+              throw Object.assign(
+                new Error("Upstream changed; preview the update again"),
+                { code: "stale_preview" },
+              );
+            }
+          }
+          sendJson(res, 200, { check, diff, skill: detail() });
           return;
         }
-        store.restore(id, versionId, { force: Boolean(body.force) });
-        sendJson(res, 200, { skill: buildSkillDetail(store, id) });
+        const { version, check } = store.updateApply(id, {
+          branch,
+          force: Boolean(body.force),
+          expectedCommit:
+            typeof body.expectedCommit === "string"
+              ? body.expectedCommit
+              : undefined,
+          expectedHead:
+            typeof body.expectedHead === "string"
+              ? body.expectedHead
+              : undefined,
+        });
+        sendJson(res, 200, { version, check, skill: detail() });
+        return;
+      }
+      if (action === "restore") {
+        const versionId =
+          typeof body.versionId === "string" ? body.versionId : "";
+        if (!versionId) throw new Error("versionId required");
+        store.restore(id, versionId, { branch, force: Boolean(body.force) });
+        sendJson(res, 200, { skill: detail() });
         return;
       }
     } catch (e) {
@@ -768,7 +972,15 @@ async function handleApi(
   if (method === "GET" && skillMatch) {
     const id = decodeURIComponent(skillMatch[1]);
     try {
-      sendJson(res, 200, buildSkillDetail(store, id));
+      sendJson(
+        res,
+        200,
+        buildSkillDetail(
+          store,
+          id,
+          url.searchParams.get("branch") ?? undefined,
+        ),
+      );
     } catch (e) {
       apiError(res, e);
     }
@@ -791,18 +1003,29 @@ async function handleApi(
     return;
   }
 
-  const bundleMemberMatch = path.match(/^\/api\/bundles\/([^/]+)\/members(?:\/([^/]+))?$/);
+  const bundleMemberMatch = path.match(
+    /^\/api\/bundles\/([^/]+)\/members(?:\/([^/]+))?$/,
+  );
   if (bundleMemberMatch) {
     const bname = decodeURIComponent(bundleMemberMatch[1]);
-    const skillId = bundleMemberMatch[2] ? decodeURIComponent(bundleMemberMatch[2]) : undefined;
+    const skillId = bundleMemberMatch[2]
+      ? decodeURIComponent(bundleMemberMatch[2])
+      : undefined;
     if (method === "POST" && !skillId) {
-      const body = parseJsonBody(await readBody(req)) as { skill?: string; pin?: boolean };
+      const body = parseJsonBody(await readBody(req)) as {
+        skill?: string;
+        pin?: boolean;
+        ref?: string;
+      };
       if (!body.skill?.trim()) {
         sendJson(res, 400, { error: "skill required", code: "bad_request" });
         return;
       }
       try {
-        store.bundleAdd(bname, body.skill.trim(), { pin: Boolean(body.pin) });
+        store.bundleAdd(bname, body.skill.trim(), {
+          pin: Boolean(body.pin),
+          ref: typeof body.ref === "string" ? body.ref : undefined,
+        });
         sendJson(res, 200, buildBundleDetail(store, bname));
       } catch (e) {
         apiError(res, e);
@@ -820,9 +1043,15 @@ async function handleApi(
     }
     // POST .../members/:skill with { pin } to re-link mode
     if (method === "POST" && skillId) {
-      const body = parseJsonBody(await readBody(req)) as { pin?: boolean };
+      const body = parseJsonBody(await readBody(req)) as {
+        pin?: boolean;
+        ref?: string;
+      };
       try {
-        store.bundleAdd(bname, skillId, { pin: Boolean(body.pin) });
+        store.bundleAdd(bname, skillId, {
+          pin: Boolean(body.pin),
+          ref: typeof body.ref === "string" ? body.ref : undefined,
+        });
         sendJson(res, 200, buildBundleDetail(store, bname));
       } catch (e) {
         apiError(res, e);
@@ -855,7 +1084,10 @@ async function handleApi(
 
   // drain unused body
   if (method !== "GET" && method !== "HEAD") await readBody(req);
-  sendJson(res, 404, { error: `not found: ${method} ${path}`, code: "not_found" });
+  sendJson(res, 404, {
+    error: `not found: ${method} ${path}`,
+    code: "not_found",
+  });
 }
 
 function parseJsonBody(raw: string): unknown {
@@ -870,6 +1102,10 @@ function parseJsonBody(raw: string): unknown {
 function apiError(res: ServerResponse, e: unknown): void {
   const err = e as Error & { code?: string };
   const msg = err instanceof Error ? err.message : String(e);
+  if (err.code === "stale_preview") {
+    sendJson(res, 409, { error: msg, code: err.code });
+    return;
+  }
   if (err.code === "not_found" || /not found/.test(msg)) {
     sendJson(res, 404, { error: msg, code: "not_found" });
     return;
@@ -905,7 +1141,8 @@ export function startUi(opts: StartUiOptions = {}): void {
         serveStatic(res, uiDist, url.pathname);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        if (!res.headersSent) sendJson(res, 500, { error: msg, code: "internal" });
+        if (!res.headersSent)
+          sendJson(res, 500, { error: msg, code: "internal" });
         else res.end();
       }
     })();
@@ -916,7 +1153,9 @@ export function startUi(opts: StartUiOptions = {}): void {
     console.log(`skillcoffer ui  ${url}`);
     console.log(`store         ${home}`);
     if (!existsSync(uiDist)) {
-      console.log(`warn: UI assets missing at ${uiDist} — run npm run build:ui`);
+      console.log(
+        `warn: UI assets missing at ${uiDist} — run npm run build:ui`,
+      );
     }
     if (opts.open) openBrowser(url);
   });
@@ -933,7 +1172,8 @@ export function startUi(opts: StartUiOptions = {}): void {
 
 function openBrowser(url: string): void {
   const plat = process.platform;
-  const cmd = plat === "darwin" ? "open" : plat === "win32" ? "cmd" : "xdg-open";
+  const cmd =
+    plat === "darwin" ? "open" : plat === "win32" ? "cmd" : "xdg-open";
   const args = plat === "win32" ? ["/c", "start", "", url] : [url];
   spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
 }

@@ -13,9 +13,9 @@ skillcoffer 把散落的 [Agent Skills](https://agentskills.io) 目录变成一�
 
 不需要数据库、托管服务或另一套 agent runtime。完整命令是 `skillcoffer`，`skco` 是完全等价的短命令。
 
-![skillcoffer WebUI 展示 skill 的未存档修改、工作线、live 和 pin 挂载以及版本存档](./docs/images/skill-overview.png)
+![skillcoffer WebUI 的 Skills 资源库：来源筛选、描述与工作线状态](./docs/images/skill-overview.png)
 
-<p align="center"><sub>真实 WebUI：未存档修改、工作线状态、live / pin 挂载与版本存档集中在同一视图。</sub></p>
+<p align="center"><sub>Skills 资源库：按来源筛选与搜索，查看描述、工作线和修改状态。</sub></p>
 
 ## 为什么用 skillcoffer
 
@@ -192,11 +192,16 @@ skillcoffer ui --open
 
 默认地址为 [http://127.0.0.1:7526](http://127.0.0.1:7526)，可通过 `--port` 覆盖。服务只绑定本机回环地址。
 
-WebUI 提供安装、状态、文件浏览、diff、save / restore、上游更新、挂载、Bundle 和 Doctor 操作；skill 内容仍由你自己的编辑器修改。
+WebUI 提供 Skills 搜索与来源筛选、Markdown / Raw 文件浏览、Diff、版本保存与恢复、上游更新、挂载、Bundle 和 Doctor。界面支持纸白 / 夜色主题；skill 内容仍由你自己的编辑器修改。
+
+- `/` 聚焦资源库搜索，`⌘/Ctrl K` 快速打开 Skill 或 Bundle，`⌘/Ctrl S` 保存当前工作线。
+- 文件、Diff 和版本页共用工作线选择器；查看另一条工作线不会改变 CLI 的默认工作线。
+- Links、Upstream 与低频操作在 Skill 的更多菜单中；Doctor 和 Store 信息在顶部工具菜单中。
+- Bundle 支持多选添加、live / pin 切换、精确版本选择与移出撤销。
 
 ![skillcoffer Bundle 页面展示 live 与 pin 成员以及 pi 启动命令](./docs/images/bundle-composition.png)
 
-<p align="center"><sub>Bundle 可混合 live 与 pin 成员；dirty 的 live skill 会在进入会话前明确警告。</sub></p>
+<p align="center"><sub>Bundle：成员、live / pin 引用与 pi 启动命令集中在同一页。</sub></p>
 
 ## 核心模型
 

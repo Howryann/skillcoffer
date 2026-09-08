@@ -1,11 +1,9 @@
 import type {
   BundleDetail,
-  DoctorIssue,
   DoctorReport,
   Overview,
   SkillDetail,
 } from "../../src/ui/contracts";
-
 export type {
   BundleDetail,
   DoctorIssue,
@@ -17,15 +15,30 @@ export type {
   SkillVersion,
 } from "../../src/ui/contracts";
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message);
+  }
+}
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error || `${init?.method ?? "GET"} ${path} failed: ${res.status}`);
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+      code?: string;
+    } | null;
+    throw new ApiError(
+      body?.error || `Request failed (${res.status})`,
+      res.status,
+      body?.code,
+    );
   }
   return res.json() as Promise<T>;
 }
-
 function post<T>(path: string, body: unknown = {}): Promise<T> {
   return request(path, {
     method: "POST",
@@ -33,40 +46,33 @@ function post<T>(path: string, body: unknown = {}): Promise<T> {
     body: JSON.stringify(body),
   });
 }
-
 const skillUrl = (id: string, suffix = "") =>
   `/api/skills/${encodeURIComponent(id)}${suffix}`;
-const bundleUrl = (name: string, suffix = "") =>
-  `/api/bundles/${encodeURIComponent(name)}${suffix}`;
-
-export function fetchOverview(): Promise<Overview> {
-  return request("/api/overview");
+const bundleUrl = (id: string, suffix = "") =>
+  `/api/bundles/${encodeURIComponent(id)}${suffix}`;
+function query(opts: Record<string, string | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(opts))
+    if (value !== undefined) params.set(key, value);
+  return params.size ? `?${params}` : "";
 }
-
-export function fetchDoctor(): Promise<DoctorReport> {
-  return request("/api/doctor");
-}
-
-export function fixDoctorIssue(opts: {
+export const fetchOverview = (): Promise<Overview> => request("/api/overview");
+export const fetchDoctor = (): Promise<DoctorReport> => request("/api/doctor");
+export const fixDoctorIssue = (opts: {
   fix: "unlink";
   skill: string;
   path: string;
-}): Promise<DoctorReport> {
-  return post("/api/doctor/fix", opts);
-}
-
-export function installSkill(opts: {
-  source: string;
-  agent?: string;
-}): Promise<{
+}): Promise<DoctorReport> => post("/api/doctor/fix", opts);
+export type InstallResult = {
   skills: { id: string }[];
   skipped: { localId: string; reason: string }[];
   failed: { path: string; error: string }[];
   overview: Overview;
-}> {
-  return post("/api/install", opts);
-}
-
+};
+export const installSkill = (opts: {
+  source: string;
+  agent?: string;
+}): Promise<InstallResult> => post("/api/install", opts);
 export type CheckResult = {
   status: "equal" | "upstream-changed" | "local-diverged" | "unavailable";
   message: string;
@@ -75,97 +81,95 @@ export type CheckResult = {
   resolvedCommit?: string;
   upstreamTreeHash?: string;
 };
-
 export type DiffResult = {
   text: string;
   leftLabel: string;
   rightLabel: string;
+  path?: string;
+  resolvedCommit?: string;
 };
-
-export function fetchSkill(id: string): Promise<SkillDetail> {
-  return request(skillUrl(id));
-}
-
-function skillAction<T>(id: string, action: string, body?: unknown): Promise<T> {
-  return post(skillUrl(id, `/${action}`), body);
-}
-
-export function saveSkill(
+export const fetchSkill = (id: string, branch?: string): Promise<SkillDetail> =>
+  request(skillUrl(id, query({ branch })));
+type SkillResult = { skill: SkillDetail };
+export const saveSkill = (
   id: string,
   note?: string,
-): Promise<{ skill: SkillDetail; version: { id: string } }> {
-  return skillAction(id, "save", note ? { note } : {});
-}
-
-export function discardSkill(id: string): Promise<{ skill: SkillDetail }> {
-  return skillAction(id, "discard");
-}
-
-export function linkSkill(
+  branch?: string,
+): Promise<SkillResult & { version: { id: string } }> =>
+  post(skillUrl(id, "/save"), { note, branch });
+export const discardSkill = (
   id: string,
-  opts: { agent?: string; to?: string; pin?: boolean; force?: boolean },
-): Promise<{ skill: SkillDetail; link: { to: string; mode: string; ref: string } }> {
-  return skillAction(id, "link", opts);
-}
-
-export function unlinkSkill(id: string, to: string): Promise<{ skill: SkillDetail }> {
-  return skillAction(id, "unlink", { to });
-}
-
-export function checkSkill(id: string): Promise<{ check: CheckResult; skill: SkillDetail }> {
-  return skillAction(id, "check");
-}
-
-export function previewUpdate(
+  branch?: string,
+): Promise<SkillResult> => post(skillUrl(id, "/discard"), { branch });
+export type LinkOptions = {
+  agent?: string;
+  to?: string;
+  pin?: boolean;
+  force?: boolean;
+  ref?: string;
+  repin?: boolean;
+  branch?: string;
+};
+export const linkSkill = (
   id: string,
-): Promise<{ check: CheckResult; diff: DiffResult | null; skill: SkillDetail }> {
-  return skillAction(id, "update", { apply: false });
-}
-
-export function applyUpdate(
+  opts: LinkOptions,
+): Promise<SkillResult & { link: { to: string; mode: string; ref: string } }> =>
+  post(skillUrl(id, "/link"), opts);
+export const unlinkSkill = (
   id: string,
-  force = false,
-): Promise<{ check: CheckResult; version: { id: string }; skill: SkillDetail }> {
-  return skillAction(id, "update", { apply: true, force });
-}
-
-export function restoreSkill(
+  to: string,
+  branch?: string,
+): Promise<SkillResult> => post(skillUrl(id, "/unlink"), { to, branch });
+export const checkSkill = (
+  id: string,
+  branch?: string,
+): Promise<SkillResult & { check: CheckResult }> =>
+  post(skillUrl(id, "/check"), { branch });
+export type UpdatePreview = SkillResult & {
+  check: CheckResult;
+  diff: DiffResult | null;
+};
+export const previewUpdate = (
+  id: string,
+  branch?: string,
+): Promise<UpdatePreview> =>
+  post(skillUrl(id, "/update"), { apply: false, branch });
+export const applyUpdate = (
+  id: string,
+  opts: {
+    branch: string;
+    force?: boolean;
+    expectedCommit: string;
+    expectedHead: string;
+  },
+): Promise<SkillResult & { check: CheckResult; version: { id: string } }> =>
+  post(skillUrl(id, "/update"), { ...opts, apply: true });
+export const restoreSkill = (
   id: string,
   versionId: string,
   force = false,
-): Promise<{ skill: SkillDetail }> {
-  return skillAction(id, "restore", { versionId, force });
-}
-
-export function fetchDiff(
+  branch?: string,
+): Promise<SkillResult> =>
+  post(skillUrl(id, "/restore"), { versionId, force, branch });
+export type DiffOptions = {
+  upstream?: boolean;
+  version?: string;
+  left?: string;
+  right?: string;
+  path?: string;
+  branch?: string;
+};
+export const fetchDiff = (
   id: string,
-  opts: {
-    upstream?: boolean;
-    version?: string;
-    left?: string;
-    right?: string;
-    path?: string;
-  } = {},
-): Promise<DiffResult> {
-  const query = new URLSearchParams();
-  if (opts.upstream) query.set("upstream", "1");
-  if (opts.version) query.set("version", opts.version);
-  if (opts.left) query.set("left", opts.left);
-  if (opts.right) query.set("right", opts.right);
-  if (opts.path) query.set("path", opts.path);
-  const suffix = query.size ? `/diff?${query}` : "/diff";
-  return request(skillUrl(id, suffix));
-}
-
+  opts: DiffOptions = {},
+): Promise<DiffResult> =>
+  request(
+    skillUrl(
+      id,
+      `/diff${query({ ...opts, upstream: opts.upstream ? "1" : undefined })}`,
+    ),
+  );
 export type SkillFileEntry = { path: string; size: number };
-
-export function fetchSkillFiles(
-  id: string,
-  ref = "work",
-): Promise<{ ref: string; label: string; files: SkillFileEntry[] }> {
-  return request(skillUrl(id, `/files?ref=${encodeURIComponent(ref)}`));
-}
-
 export type SkillFileContent = {
   ref: string;
   label: string;
@@ -175,45 +179,44 @@ export type SkillFileContent = {
   truncated: boolean;
   content: string | null;
 };
-
-export function fetchSkillFile(
+export const fetchSkillFiles = (
+  id: string,
+  ref = "work",
+  branch?: string,
+): Promise<{ ref: string; label: string; files: SkillFileEntry[] }> =>
+  request(skillUrl(id, `/files${query({ ref, branch })}`));
+export const fetchSkillFile = (
   id: string,
   path: string,
   ref = "work",
-): Promise<SkillFileContent> {
-  return request(skillUrl(id, `/file?${new URLSearchParams({ path, ref })}`));
-}
-
-export function fetchBundle(name: string): Promise<BundleDetail> {
-  return request(bundleUrl(name));
-}
-
-export function createBundle(name: string): Promise<BundleDetail> {
-  return post("/api/bundles", { name });
-}
-
-export function addBundleMember(
+  branch?: string,
+): Promise<SkillFileContent> =>
+  request(skillUrl(id, `/file${query({ path, ref, branch })}`));
+export const fetchBundle = (name: string): Promise<BundleDetail> =>
+  request(bundleUrl(name));
+export const createBundle = (name: string): Promise<BundleDetail> =>
+  post("/api/bundles", { name });
+export const addBundleMember = (
   name: string,
   skill: string,
   pin = false,
-): Promise<BundleDetail> {
-  return post(bundleUrl(name, "/members"), { skill, pin });
-}
-
-export function setBundleMemberMode(
+  ref?: string,
+): Promise<BundleDetail> =>
+  post(bundleUrl(name, "/members"), { skill, pin, ref });
+export const setBundleMemberMode = (
   name: string,
   skill: string,
   pin: boolean,
-): Promise<BundleDetail> {
-  return post(bundleUrl(name, `/members/${encodeURIComponent(skill)}`), { pin });
-}
-
-export function removeBundleMember(name: string, skill: string): Promise<BundleDetail> {
-  return request(bundleUrl(name, `/members/${encodeURIComponent(skill)}`), {
+  ref?: string,
+): Promise<BundleDetail> =>
+  post(bundleUrl(name, `/members/${encodeURIComponent(skill)}`), { pin, ref });
+export const removeBundleMember = (
+  name: string,
+  skill: string,
+): Promise<BundleDetail> =>
+  request(bundleUrl(name, `/members/${encodeURIComponent(skill)}`), {
     method: "DELETE",
   });
-}
-
 export async function deleteBundle(name: string): Promise<void> {
   await request(bundleUrl(name), { method: "DELETE" });
 }

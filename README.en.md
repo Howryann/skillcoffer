@@ -13,9 +13,9 @@ skillcoffer turns loose [Agent Skills](https://agentskills.io) directories into 
 
 No database, hosted service, or new agent runtime is required. Use `skillcoffer`, or the equivalent short command `skco`.
 
-![skillcoffer WebUI showing unsaved changes, branches, live and pinned links, and version history](./docs/images/skill-overview.png)
+![skillcoffer Skills library with source filters, descriptions, and branch state](./docs/images/skill-overview.png)
 
-<p align="center"><sub>Live WebUI, currently available in Simplified Chinese: unsaved changes, branch status, live / pinned links, and immutable versions in one view.</sub></p>
+<p align="center"><sub>The Skills library brings source filters, search, descriptions, and branch state into one view.</sub></p>
 
 ## Why skillcoffer
 
@@ -195,11 +195,16 @@ skillcoffer ui --open
 
 The default address is [http://127.0.0.1:7526](http://127.0.0.1:7526). Override it with `--port`. The server binds only to the local loopback interface.
 
-The WebUI supports installation, status, file browsing, diffs, save and restore, upstream updates, links, bundles, and Doctor operations. Skill content remains editable in your own editor. The current interface is in Simplified Chinese.
+The WebUI provides Skills search and source filters, Markdown / Raw file views, diffs, version history, save and restore, upstream updates, links, bundles, and Doctor. Paper and dark themes share the same layout. Skill content remains editable in your own editor; interface copy uses Simplified Chinese alongside familiar technical terms.
+
+- `/` focuses library search, `⌘/Ctrl K` opens a skill or bundle, and `⌘/Ctrl S` saves the selected branch.
+- Files, Changes, and Versions share a branch selector. Viewing another branch does not change the CLI default.
+- Links and Upstream live in the skill menu; Doctor and Store information live in the top toolbar.
+- Bundles support multiple-member selection, live / pin switching, exact version selection, and undo after removing a member.
 
 ![skillcoffer bundle page showing live and pinned members with a pi launch command](./docs/images/bundle-composition.png)
 
-<p align="center"><sub>Bundles can mix live and pinned members; dirty live skills are called out before they enter a session.</sub></p>
+<p align="center"><sub>Bundle members, their live / pin refs, and the pi launch command share one page.</sub></p>
 
 ## Core Model
 
