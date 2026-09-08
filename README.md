@@ -249,6 +249,10 @@ $SKILLCOFFER_HOME/
 - WebUI 只监听 `127.0.0.1`，不提供远程多用户鉴权。
 - store 是本机状态；请像其他开发资料一样自行备份。
 
+Store 写操作使用 `.store-write.lock` 做进程间互斥；Backend push / pull / status 也会在整个同步或检查期间持锁。其他进程遇到 `Store busy` 时，等待当前操作结束后重试。锁不会阻止编辑器直接修改 work 文件。
+
+如果进程异常退出，锁可能遗留。先停止所有使用该 Store 的 CLI 和 WebUI 进程，再删除报错中指明的 `.store-write.lock` 文件并重试。不要在写入仍可能进行时删除锁；程序不会根据 PID 或超时自动抢锁。升级后请重启旧版进程，新锁不能约束使用原型锁的旧版本。
+
 ## 开发
 
 ```bash

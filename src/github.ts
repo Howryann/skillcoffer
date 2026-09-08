@@ -154,10 +154,12 @@ export function acquireGithub(spec: GithubSpec): GithubSnapshot {
     if (r.code !== 0 || !r.out) throw new Error(`cannot resolve commit: ${r.err}`);
     const resolvedCommit = r.out;
 
-    // sparse checkout the skill path (or whole repo if path empty)
-    runGit(["sparse-checkout", "init", "--cone"], tmp);
+    // Only restrict checkout when a subdirectory was requested. An empty cone
+    // includes root files but excludes the descendants needed by root installs.
     if (spec.path) {
-      r = runGit(["sparse-checkout", "set", spec.path], tmp);
+      r = runGit(["sparse-checkout", "init", "--cone"], tmp);
+      if (r.code !== 0) throw new Error(`sparse-checkout init failed: ${r.err}`);
+      r = runGit(["sparse-checkout", "set", "--", spec.path], tmp);
       if (r.code !== 0) throw new Error(`sparse-checkout set failed: ${r.err}`);
     }
 
@@ -174,6 +176,12 @@ export function acquireGithub(spec: GithubSpec): GithubSnapshot {
     if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
       throw new Error(`github path escapes checkout: ${spec.path || "(root)"}`);
     }
+    if (rel === ".git" || rel.startsWith(`.git${sep}`)) {
+      throw new Error("github source cannot be checkout metadata");
+    }
+    // All selected blobs have been checked out. Return only content so install,
+    // hashing, upstream diff and update share the same metadata-free tree.
+    rmSync(join(checkoutRoot, ".git"), { recursive: true, force: true });
     return {
       treeDir,
       cleanup,
