@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { looksLikeGithubSpec } from "./github.js";
 import { backendPull, backendPush, backendStatus } from "./backend.js";
+import { checkAllUpstreams, readUpstreamCache, upstreamSummary } from "./upstream.js";
 import {
   Store,
   agentPresetPath,
@@ -34,7 +35,8 @@ Skills:
   add <path|owner/repo[/path]> [--ref] [--name] [--agent pi|agents|claude]
   publish <skill> [owner/repo/path] [--ref] [--branch]
   list | status | path | versions | save | restore | discard
-  branch | work-on | link | unlink | diff | check | update | remove | doctor | demo
+  check <skill> [--branch <branch>] | check --all [--branch <branch>]
+  branch | work-on | link | unlink | diff | update | remove | doctor | demo
   ui [--port] [--open]
 
 Storage Backend:
@@ -48,6 +50,7 @@ Examples:
   skillcoffer add ./examples/demo-skill
   skillcoffer add anthropics/skills/skills/pdf
   skillcoffer add anthropics/skills/skills
+  skillcoffer check --all
   skillcoffer bundle create coding
   skillcoffer bundle add coding pdf
   skillcoffer pi coding --print
@@ -68,6 +71,7 @@ const cliOptions = {
   message: { type: "string", short: "m" },
   version: { type: "string" },
   upstream: { type: "boolean" },
+  all: { type: "boolean" },
   apply: { type: "boolean" },
   force: { type: "boolean" },
   pin: { type: "boolean" },
@@ -251,7 +255,52 @@ function cmdDiff(store: Store, pos: string[], flags: Flags) {
   runDiff(left, work, label, `work(${branch})`);
 }
 
+function cmdCheckAll(store: Store, flags: Flags) {
+  try {
+    checkAllUpstreams(store, ({ completed, total }) => {
+      if (process.stderr.isTTY) process.stderr.write(`\rchecking upstreams: ${completed}/${total}`);
+    });
+  } finally {
+    if (process.stderr.isTTY) process.stderr.write("\n");
+  }
+  const cache = readUpstreamCache(store);
+  const counts = { available: 0, current: 0, unknown: 0, skipped: 0, failed: 0 };
+  for (const m of store.list()) {
+    const branch = flag(flags, "branch") ?? m.activeBranch;
+    let status: keyof typeof counts;
+    let message: string;
+    try {
+      if (m.upstream?.remote !== "github") {
+        status = "skipped";
+        message = "no github upstream (file source or missing upstream)";
+      } else {
+        if (!m.branches[branch]) throw new Error(`branch not found: ${branch}`);
+        const summary = upstreamSummary(store, store.status(m.localId), cache, { branch });
+        if (!summary) throw new Error("no current upstream observation; retry the check");
+        ({ status, message } = summary);
+      }
+    } catch (error) {
+      status = "failed";
+      message = error instanceof Error ? error.message : String(error);
+    }
+    counts[status]++;
+    console.log(`${m.localId}@${branch}\t${status}\t${message}`);
+    if (has(flags, "v") && m.upstream?.remote === "github") {
+      console.log(`  upstream: ${m.upstream.repo}/${m.upstream.path}@${m.upstream.requestedRef}`);
+      if (cache[m.localId]?.resolvedCommit) console.log(`  upstream commit: ${cache[m.localId].resolvedCommit}`);
+    }
+  }
+  console.log(`summary: ${counts.available} available, ${counts.current} current, ${counts.unknown} unknown, ${counts.skipped} skipped, ${counts.failed} failed`);
+  if (counts.failed) process.exitCode = 1;
+}
+
 function cmdCheck(store: Store, pos: string[], flags: Flags) {
+  if (has(flags, "all")) {
+    if (pos.length) die("check: <skill> and --all are mutually exclusive");
+    return cmdCheckAll(store, flags);
+  }
+  if (pos.length > 1) die("check <skill> [--branch <branch>] | check --all [--branch <branch>]");
+  if (!pos.length && store.list().length !== 1) die("skill name required; use check <skill> or check --all");
   const name = needName(store, pos[0]);
   const r = store.check(name, { branch: flag(flags, "branch") });
   console.log(`status: ${r.status}`);
@@ -471,6 +520,7 @@ function main() {
   if (!argv.length || argv[0] === "-h" || argv[0] === "--help") usage();
   const { pos, flags, rest } = parseCliArgs(argv);
   const cmd = pos.shift() || usage();
+  if (has(flags, "all") && cmd !== "check") die("--all is only supported by check");
   const store = new Store(defaultHome());
 
   try {

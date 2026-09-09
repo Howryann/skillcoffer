@@ -116,9 +116,15 @@ skillcoffer save pdf -m "Tune PDF extraction workflow"
 
 ```bash
 skillcoffer check pdf
+skillcoffer check --all
+skillcoffer check --all --branch main
 skillcoffer diff pdf --upstream
 skillcoffer update pdf --apply
 ```
+
+`check --all` 批量检查所有 GitHub 上游，按仓库和 ref 共享一次拉取，并保留检查结果供 WebUI 使用。默认比较各 Skill 的当前工作线；`--branch main` 指定统一比较 main，不切换工作线。`<skill>` 与 `--all` 互斥。
+
+输出逐项状态和汇总：`available`（有更新）、`current`（上游无待应用变化）、`unknown`（基线未知）、`skipped`（本地来源）和 `failed`（检查失败，包括指定工作线不存在）。只有本地修改或仓库其他目录变化不会误报更新。单项上游失败后继续检查其他项；有失败时退出码为 1，参数错误为 2，发现更新本身不影响成功退出。检查不会修改 Skill 内容。
 
 `update` 默认只预览；只有 `--apply` 才会写入新的上游版本。
 

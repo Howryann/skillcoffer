@@ -102,7 +102,7 @@ skillcoffer add anthropics/skills/skills --ref main
 skillcoffer add 'https://github.com/anthropics/skills/tree/main/skills'
 ```
 
-If the path itself contains `SKILL.md`, that one skill is installed. Otherwise every skill root under it is installed. Each skill keeps its own upstream, so `check` / `update` still run per skill. Existing local IDs are skipped, not overwritten.
+If the path itself contains `SKILL.md`, that one skill is installed. Otherwise every skill root under it is installed. Each skill keeps its own upstream for individual `check` / `update` operations; `check --all` checks all GitHub sources together. Existing local IDs are skipped, not overwritten.
 
 ### 2. Edit and save
 
@@ -119,9 +119,15 @@ skillcoffer save pdf -m "Tune PDF extraction workflow"
 
 ```bash
 skillcoffer check pdf
+skillcoffer check --all
+skillcoffer check --all --branch main
 skillcoffer diff pdf --upstream
 skillcoffer update pdf --apply
 ```
+
+`check --all` checks all GitHub upstreams, shares one fetch per repository/ref, and retains observations for the WebUI. It compares each skill's active branch by default; `--branch main` compares main for every skill without switching branches. A skill name and `--all` are mutually exclusive.
+
+Output includes individual results and a summary: `available` (upstream changes), `current` (no pending upstream changes), `unknown` (unknown baseline), `skipped` (local source), and `failed` (including a missing requested branch). Local-only changes and unrelated repository changes do not count as updates. A failed upstream does not stop the remaining checks. Exit codes are 0 on success, including available updates, 1 when any check fails, and 2 for argument errors. Checking never modifies skill content.
 
 `update` previews by default. It only writes a new upstream version when `--apply` is present.
 

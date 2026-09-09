@@ -84,19 +84,20 @@ export function upstreamSummary(
   store: Store,
   { manifest, versions }: Pick<ReturnType<Store["status"]>, "manifest" | "versions">,
   cache: UpstreamCache,
+  { branch = manifest.activeBranch }: { branch?: string } = {},
 ): UpstreamSummary | undefined {
   const source = manifest.upstream;
   const observation = cache[manifest.localId];
   if (source?.remote !== "github" || !observation || !sameSource(source, observation.source)) return;
   const { checkedAt, error, treeHash, resolvedCommit } = observation;
-  const baseId = manifest.branches[manifest.activeBranch].upstreamBaseVersion;
+  const baseId = manifest.branches[branch].upstreamBaseVersion;
   if (baseId) {
     const base = versions.find(v => v.id === baseId);
     // A newer import supersedes an older observation (e.g. an update from another CLI).
     if (base && base.createdAt > checkedAt && base.upstream?.resolvedCommit !== resolvedCommit) return;
   }
   if (error !== undefined) return { status: "failed", checkedAt, message: error };
-  const check = store.compareUpstream(manifest.localId, treeHash!, resolvedCommit!);
+  const check = store.compareUpstream(manifest.localId, treeHash!, resolvedCommit!, { branch });
   return {
     status: check.status === "equal" ? "current"
       : check.upstreamChanged === null ? "unknown"
