@@ -25,6 +25,8 @@ import { parse as parseYaml } from "yaml";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { looksLikeGithubSpec } from "../github.js";
+import { readUpstreamCache, rememberCheck, upstreamSummary } from "../upstream.js";
+import { UpstreamJob } from "./upstream-job.js";
 import {
   Store,
   agentPresetPath,
@@ -112,14 +114,19 @@ function bundleMember(
 }
 
 export function buildOverview(store: Store): Overview {
-  const skills: OverviewSkill[] = store.list().map((m) => ({
-    id: m.localId,
-    name: m.name,
-    description: skillDescription(store.workDir(m.localId, m.activeBranch)),
-    activeBranch: m.activeBranch,
-    dirty: Boolean(store.status(m.localId).dirty[m.activeBranch]),
-    ...overviewGroup(m),
-  }));
+  const cache = readUpstreamCache(store);
+  const skills: OverviewSkill[] = store.list().map((m) => {
+    const status = store.status(m.localId);
+    return {
+      id: m.localId,
+      name: m.name,
+      description: skillDescription(store.workDir(m.localId, m.activeBranch)),
+      activeBranch: m.activeBranch,
+      dirty: Boolean(status.dirty[m.activeBranch]),
+      ...overviewGroup(m),
+      upstream: upstreamSummary(store, status, cache),
+    };
+  });
 
   const bundles: OverviewBundle[] = store.bundleList().map((b) => ({
     name: b.name,
@@ -715,12 +722,19 @@ async function handleApi(
   res: ServerResponse,
   store: Store,
   url: URL,
+  upstreamJob: UpstreamJob,
 ): Promise<void> {
   const path = url.pathname;
   const method = req.method || "GET";
 
   if (method === "GET" && path === "/api/overview") {
-    sendJson(res, 200, buildOverview(store));
+    sendJson(res, 200, { ...buildOverview(store), upstreamCheck: upstreamJob.progress });
+    return;
+  }
+
+  if (method === "POST" && path === "/api/upstream/check") {
+    await readBody(req);
+    sendJson(res, 202, upstreamJob.start());
     return;
   }
 
@@ -914,8 +928,10 @@ async function handleApi(
         return;
       }
       if (action === "check") {
+        const check = store.check(id, { branch });
+        rememberCheck(store, id, check);
         sendJson(res, 200, {
-          check: store.check(id, { branch }),
+          check,
           skill: detail(),
         });
         return;
@@ -923,6 +939,7 @@ async function handleApi(
       if (action === "update") {
         if (!body.apply) {
           const check = store.check(id, { branch });
+          rememberCheck(store, id, check);
           let diff: ReturnType<typeof buildDiff> | null = null;
           if (
             check.status === "upstream-changed" ||
@@ -951,6 +968,7 @@ async function handleApi(
               ? body.expectedHead
               : undefined,
         });
+        rememberCheck(store, id, check);
         sendJson(res, 200, { version, check, skill: detail() });
         return;
       }
@@ -1129,13 +1147,14 @@ export function startUi(opts: StartUiOptions = {}): void {
   const home = opts.home ?? defaultHome();
   const uiDist = defaultUiDist();
   const store = new Store(home);
+  const upstreamJob = new UpstreamJob(store);
 
   const server = createServer((req, res) => {
     void (async () => {
       try {
         const url = new URL(req.url || "/", `http://${host}:${port}`);
         if (url.pathname.startsWith("/api/")) {
-          await handleApi(req, res, store, url);
+          await handleApi(req, res, store, url, upstreamJob);
           return;
         }
         serveStatic(res, uiDist, url.pathname);

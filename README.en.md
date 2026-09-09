@@ -195,6 +195,8 @@ skillcoffer ui --open
 
 The default address is [http://127.0.0.1:7526](http://127.0.0.1:7526). Override it with `--port`. The server binds only to the local loopback interface.
 
+The Skills list has a **检查更新** (Check updates) action with progress and cached results. Click the update count to filter, or a skill's **有更新** marker to open its upstream diff directly. The button tooltip shows the last check time; failed checks are shown separately. Updates are detected against the displayed branch's imported upstream baseline, so local edits and changes elsewhere in the repository do not produce false alerts. Checking never applies an update.
+
 The WebUI provides Skills search and source filters, Markdown / Raw file views, diffs, version history, save and restore, upstream updates, links, bundles, and Doctor. Paper and dark themes share the same layout. Skill content remains editable in your own editor; interface copy uses Simplified Chinese alongside familiar technical terms.
 
 - `/` focuses library search, `⌘/Ctrl K` opens a skill or bundle, and `⌘/Ctrl S` saves the selected branch.

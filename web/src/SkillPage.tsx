@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   applyUpdate,
@@ -76,6 +76,29 @@ function SkillContent({
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [preview, setPreview] = useState<UpdatePreview | null>(null);
   const [confirmApply, setConfirmApply] = useState(false);
+  const autoPreview = useRef(false);
+  const wantsUpstream = params.get("upstream") === "1";
+  useEffect(() => {
+    if (!wantsUpstream) {
+      autoPreview.current = false;
+      return;
+    }
+    if (!data || !selectedBranch || autoPreview.current) return;
+    autoPreview.current = true;
+    setModal("upstream");
+    setParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete("upstream");
+      return next;
+    }, { replace: true });
+    void action.run(() => previewUpdate(id, data.branch), result => {
+      resource.setData(result.skill);
+      setCheck(result.check);
+      setPreview(result);
+      setConfirmApply(false);
+      onChanged?.();
+    });
+  }, [wantsUpstream, data?.branch, selectedBranch]);
   const notify = useNotify();
   const tab = ["files", "changes", "versions"].includes(params.get("tab") ?? "")
     ? params.get("tab")!
@@ -554,10 +577,24 @@ function SkillContent({
                   {action.busy ? "Loading…" : "Preview"}
                 </button>
                 {check ? (
-                  <span className="pill pin">{check.status}</span>
+                  <span className="pill pin">
+                    {check.status === "unavailable" ? "检查失败"
+                      : check.status === "equal" ? "已是最新"
+                        : check.upstreamChanged === false ? "上游未变"
+                          : check.upstreamChanged === null ? "基线未知" : "有更新"}
+                  </span>
                 ) : null}
               </div>
-              {check ? <p className="check-message">{check.message}</p> : null}
+              {check ? (
+                <p className="check-message">
+                  {check.status === "unavailable" ? check.message
+                    : check.status === "equal" ? "当前版本与上游一致。"
+                      : check.upstreamChanged === false ? "上游没有变化；差异来自本地保存的修改。"
+                        : check.upstreamChanged === null ? "缺少上次导入的基线，请先审阅差异。"
+                          : check.localChanged ? "上游有更新，此分支也有本地修改，请先审阅差异。"
+                            : "上游有更新，请审阅差异后应用。"}
+                </p>
+              ) : null}
               {preview?.diff ? (
                 <>
                   <div className="preview-labels">

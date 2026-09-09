@@ -57,6 +57,7 @@ function query(opts: Record<string, string | undefined>): string {
   return params.size ? `?${params}` : "";
 }
 export const fetchOverview = (): Promise<Overview> => request("/api/overview");
+export const checkUpstreams = (): Promise<NonNullable<Overview["upstreamCheck"]>> => post("/api/upstream/check");
 export const fetchDoctor = (): Promise<DoctorReport> => request("/api/doctor");
 export const fixDoctorIssue = (opts: {
   fix: "unlink";
@@ -80,6 +81,8 @@ export type CheckResult = {
   localTreeHash?: string;
   resolvedCommit?: string;
   upstreamTreeHash?: string;
+  upstreamChanged?: boolean | null;
+  localChanged?: boolean;
 };
 export type DiffResult = {
   text: string;
