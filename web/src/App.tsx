@@ -7,7 +7,7 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router-dom";
-import { fetchOverview, type Overview } from "./api";
+import { checkUpstreams, fetchOverview, type Overview } from "./api";
 import {
   CopyBtn,
   Dialog,
@@ -16,12 +16,13 @@ import {
   dialogOpen,
   editingTarget,
   skillMark,
+  relativeTime,
 } from "./Controls";
 import { Icon, Logo } from "./Icons";
 import CollectionHeader from "./CollectionHeader";
 import BundlePage, { BundlesPage } from "./BundlePage";
 import InstallForm from "./InstallForm";
-import { usePolling } from "./usePolling";
+import { useAction, usePolling } from "./usePolling";
 
 const SkillPage = lazy(() => import("./SkillPage"));
 const DoctorPage = lazy(() => import("./DoctorPage"));
@@ -31,6 +32,7 @@ function Shell() {
     data: overview,
     error,
     reload,
+    setData: setOverview,
   } = usePolling("overview", fetchOverview);
   const location = useLocation();
   const navigate = useNavigate();
@@ -125,6 +127,10 @@ function Shell() {
               element={
                 <Library
                   overview={overview}
+                  onChecking={(upstreamCheck) => {
+                    if (overview) setOverview({ ...overview, upstreamCheck });
+                    reload();
+                  }}
                   onInstall={() => setModal("install")}
                   onQuickOpen={() => setModal("command")}
                 />
@@ -231,10 +237,12 @@ function Shell() {
 }
 function Library({
   overview,
+  onChecking,
   onInstall,
   onQuickOpen,
 }: {
   overview: Overview | null;
+  onChecking: (progress: NonNullable<Overview["upstreamCheck"]>) => void;
   onInstall: () => void;
   onQuickOpen: () => void;
 }) {
@@ -243,6 +251,17 @@ function Library({
   const q = params.get("q") ?? "";
   const source = params.get("source");
   const modified = params.get("modified") === "1";
+  const updatesOnly = params.get("updates") === "1";
+  const checkAction = useAction("upstream-check");
+  const progress = overview?.upstreamCheck;
+  const checking = checkAction.busy || Boolean(progress?.running);
+  const updateCount = overview?.skills.filter(s => s.upstream?.status === "available").length ?? 0;
+  const failedCount = overview?.skills.filter(s => s.upstream?.status === "failed").length ?? 0;
+  const checkedAt = overview?.skills.flatMap(s => s.upstream ? [s.upstream.checkedAt] : []).sort().at(-1);
+  const checkHint = [
+    checkedAt ? `上次检查 ${relativeTime(checkedAt)}` : "检查所有 GitHub 来源的 Skills",
+    failedCount ? `${failedCount} 个检查失败，可重试` : "",
+  ].filter(Boolean).join(" · ");
   const change = (key: string, value?: string) =>
     setParams(
       (prev) => {
@@ -259,6 +278,7 @@ function Library({
         const next = new URLSearchParams(prev);
         next.delete("source");
         next.delete("modified");
+        next.delete("updates");
         if (group) next.set("source", group);
         if (dirty) next.set("modified", "1");
         return next;
@@ -301,6 +321,7 @@ function Library({
           ? localSource(s.groupKey)
           : s.groupKey === source)) &&
       (!modified || s.dirty) &&
+      (!updatesOnly || s.upstream?.status === "available") &&
       `${s.id} ${s.name} ${s.description} ${s.groupLabel}`
         .toLowerCase()
         .includes(q.trim().toLowerCase()),
@@ -319,8 +340,8 @@ function Library({
         <aside className="sources" aria-label="筛选">
           <div className="section-label">Collection</div>
           <button
-            className={`source-button ${!source && !modified ? "active" : ""}`}
-            aria-pressed={!source && !modified}
+            className={`source-button ${!source && !modified && !updatesOnly ? "active" : ""}`}
+            aria-pressed={!source && !modified && !updatesOnly}
             onClick={() => filter()}
           >
             <span>全部</span>
@@ -367,8 +388,29 @@ function Library({
               />
               <span className="key">/</span>
             </label>
-            <span className="list-meta">NAME / SOURCE / STATE</span>
+            <div className="upstream-toolbar" aria-live="polite">
+              {updateCount > 0 || updatesOnly ? (
+                <button
+                  className={`update-count ${updatesOnly ? "active" : ""}`}
+                  aria-pressed={updatesOnly}
+                  onClick={() => change("updates", updatesOnly ? undefined : "1")}
+                >
+                  {updateCount} 个有更新
+                </button>
+              ) : null}
+              {failedCount > 0 ? <span className="small muted" title={checkHint}>{failedCount} 个检查失败</span> : null}
+              <button
+                className="text-button check-upstreams"
+                disabled={checking || !overview?.skills.some(s => !localSource(s.groupKey))}
+                title={checkHint}
+                onClick={() => void checkAction.run(checkUpstreams, onChecking)}
+              >
+                <Icon name="refresh" />
+                {checking ? `检查中 ${progress?.completed ?? 0}/${progress?.total ?? 0}` : "检查更新"}
+              </button>
+            </div>
           </div>
+          <ErrorMessage error={checkAction.error || progress?.error || null} />
           {!overview ? (
             <p className="empty">加载中…</p>
           ) : rows.length ? (
@@ -378,12 +420,31 @@ function Library({
                   {skillMark(s.id)}
                 </span>
                 <div className="skill-info">
-                  <Link
-                    className="skill-link"
-                    to={`/skills/${encodeURIComponent(s.id)}`}
-                  >
-                    {s.id}
-                  </Link>
+                  <div className="skill-name-line">
+                    <Link
+                      className="skill-link"
+                      to={`/skills/${encodeURIComponent(s.id)}`}
+                    >
+                      {s.id}
+                    </Link>
+                    {s.upstream?.status === "available" ? (
+                      <Link
+                        className="upstream-mark"
+                        to={`/skills/${encodeURIComponent(s.id)}?${new URLSearchParams({ upstream: "1", branch: s.activeBranch })}`}
+                        aria-label={`查看 ${s.id} 的上游更新`}
+                      >
+                        <span className="point" />有更新
+                      </Link>
+                    ) : s.upstream?.status === "failed" || s.upstream?.status === "unknown" ? (
+                      <Link
+                        className="upstream-note"
+                        title={s.upstream.message}
+                        to={`/skills/${encodeURIComponent(s.id)}?${new URLSearchParams({ upstream: "1", branch: s.activeBranch })}`}
+                      >
+                        {s.upstream.status === "failed" ? "检查失败" : "基线未知"}
+                      </Link>
+                    ) : null}
+                  </div>
                   <p className="skill-description" title={s.description}>
                     {s.description || s.name}
                   </p>

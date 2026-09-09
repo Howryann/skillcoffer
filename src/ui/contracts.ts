@@ -1,3 +1,5 @@
+import type { UpstreamProgress, UpstreamSummary } from "../upstream.js";
+
 export type OverviewSkill = {
   id: string;
   name: string;
@@ -6,6 +8,7 @@ export type OverviewSkill = {
   dirty: boolean;
   groupKey: string;
   groupLabel: string;
+  upstream?: UpstreamSummary;
 };
 
 export type OverviewBundle = {
@@ -18,6 +21,7 @@ export type Overview = {
   home: string;
   skills: OverviewSkill[];
   bundles: OverviewBundle[];
+  upstreamCheck?: UpstreamProgress;
 };
 
 export type SkillVersion = {

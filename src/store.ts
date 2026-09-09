@@ -107,6 +107,9 @@ export type CheckResult = {
   localTreeHash?: string;
   resolvedCommit?: string;
   upstreamTreeHash?: string;
+  /** null means the branch has no known imported upstream base. */
+  upstreamChanged?: boolean | null;
+  localChanged?: boolean;
 };
 
 export type PublishResult = {
@@ -619,41 +622,49 @@ export class Store {
       };
     }
     try {
-      const upHash = snap.treeHash;
-      const localMoved = hasLocalDivergence(st);
-
-      if (upHash === headMeta.treeHash) {
-        return {
-          status: "equal",
-          message: "local HEAD tree matches upstream",
-          localHead: st.head,
-          localTreeHash: headMeta.treeHash,
-          resolvedCommit: snap.resolvedCommit,
-          upstreamTreeHash: upHash,
-        };
-      }
-      if (localMoved) {
-        return {
-          status: "local-diverged",
-          message:
-            "local branch differs from upstream and has local saves or an unknown upstream base — review before update --force",
-          localHead: st.head,
-          localTreeHash: headMeta.treeHash,
-          resolvedCommit: snap.resolvedCommit,
-          upstreamTreeHash: upHash,
-        };
-      }
-      return {
-        status: "upstream-changed",
-        message: "upstream tree differs from local HEAD",
-        localHead: st.head,
-        localTreeHash: headMeta.treeHash,
-        resolvedCommit: snap.resolvedCommit,
-        upstreamTreeHash: upHash,
-      };
+      return this.compareUpstream(localId, snap.treeHash, snap.resolvedCommit, { branch });
     } finally {
       snap.cleanup();
     }
+  }
+
+  /** Compare a fetched tree with this branch's HEAD and imported baseline. No network. */
+  compareUpstream(
+    localId: string,
+    upstreamTreeHash: string,
+    resolvedCommit: string,
+    opts: { branch?: string } = {},
+  ): CheckResult {
+    const m = this.readManifest(localId);
+    const branch = opts.branch ?? m.activeBranch;
+    const state = m.branches[branch];
+    if (!state) throw new Error(`branch not found: ${branch}`);
+    const head = this.readVersion(localId, state.head);
+    const base = state.upstreamBaseVersion
+      ? this.readVersion(localId, state.upstreamBaseVersion)
+      : undefined;
+    const upstreamChanged = base ? upstreamTreeHash !== base.treeHash : null;
+    const localChanged = base ? head.treeHash !== base.treeHash : hasLocalDivergence(state);
+    const equal = upstreamTreeHash === head.treeHash;
+    // Keep the existing update safety classification; upstreamChanged separately
+    // answers whether the remote changed, including branches with local saves.
+    const diverged = hasLocalDivergence(state);
+    return {
+      status: equal ? "equal" : diverged ? "local-diverged" : "upstream-changed",
+      message: equal
+        ? "local HEAD tree matches upstream"
+        : upstreamChanged === false
+          ? "upstream is unchanged; local branch differs from its imported base"
+          : diverged
+            ? "local branch differs from upstream and has local saves or an unknown upstream base — review before update --force"
+            : "upstream tree differs from local HEAD",
+      localHead: state.head,
+      localTreeHash: head.treeHash,
+      resolvedCommit,
+      upstreamTreeHash,
+      upstreamChanged,
+      localChanged,
+    };
   }
 
   /**

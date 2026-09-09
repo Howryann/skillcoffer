@@ -443,6 +443,56 @@ html[data-theme="dark"] .button.primary {
   color: var(--faint);
   white-space: nowrap;
 }
+.upstream-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+}
+.check-upstreams,
+.upstream-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.check-upstreams .icon {
+  width: 13px;
+  height: 13px;
+}
+.update-count,
+.upstream-mark {
+  color: var(--green);
+}
+.update-count {
+  padding: 3px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.update-count.active {
+  background: var(--green-soft);
+}
+.skill-name-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+}
+.upstream-mark,
+.upstream-note {
+  font-size: 11px;
+  font-weight: 400;
+}
+.upstream-note {
+  color: var(--muted);
+}
+.upstream-mark .point {
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+}
 .skill-row {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) 160px 87px;
@@ -1491,6 +1541,16 @@ dialog::backdrop {
   }
   .list-meta {
     display: none;
+  }
+  .list-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .list-toolbar .search {
+    flex-basis: 100%;
+  }
+  .upstream-toolbar {
+    margin-left: auto;
   }
   .search input {
     font-size: 12px;

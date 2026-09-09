@@ -112,8 +112,10 @@ export function looksLikeGithubSpec(input: string): boolean {
  * Public repo only: resolve ref -> commit, sparse shallow fetch path.
  * Caller must call cleanup().
  */
-export function acquireGithub(spec: GithubSpec): GithubSnapshot {
+export function acquireGithub(spec: GithubSpec, paths?: string[]): GithubSnapshot {
   spec = checkedGithubSpec(spec.repo, spec.path, spec.requestedRef);
+  const selectedPaths = paths ?? [spec.path];
+  for (const path of selectedPaths) checkedGithubSpec(spec.repo, path, spec.requestedRef);
   if (runGit(["--version"]).code !== 0) {
     throw new Error("git not found; required for GitHub source");
   }
@@ -156,10 +158,10 @@ export function acquireGithub(spec: GithubSpec): GithubSnapshot {
 
     // Only restrict checkout when a subdirectory was requested. An empty cone
     // includes root files but excludes the descendants needed by root installs.
-    if (spec.path) {
+    if (selectedPaths.length && selectedPaths.every(Boolean)) {
       r = runGit(["sparse-checkout", "init", "--cone"], tmp);
       if (r.code !== 0) throw new Error(`sparse-checkout init failed: ${r.err}`);
-      r = runGit(["sparse-checkout", "set", "--", spec.path], tmp);
+      r = runGit(["sparse-checkout", "set", "--", ...selectedPaths], tmp);
       if (r.code !== 0) throw new Error(`sparse-checkout set failed: ${r.err}`);
     }
 
