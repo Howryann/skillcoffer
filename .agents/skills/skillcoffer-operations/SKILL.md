@@ -1,148 +1,102 @@
 ---
 name: skillcoffer-operations
-description: Operate and troubleshoot skillcoffer (`skco`) safely. Use whenever the user asks to install, inspect, edit, save, restore, branch, compare, update, link, unlink, bundle, remove, or launch agent skills with skillcoffer, including requests that only provide a GitHub skill URL or mention live/pin mounts.
-compatibility: Requires the skco CLI. GitHub sources also require git and network access.
+description: Use skillcoffer (skco) to install, edit, version, update, publish, mount, bundle, and launch agent skills; back up or restore its Store with a GitHub Backend; and troubleshoot Store busy or broken links. Use for skillcoffer operation requests, GitHub skill installation URLs, and live/pin mount questions even when no command is supplied.
+compatibility: Node.js >=20 on Linux/macOS; skco CLI. GitHub operations require Git/network, comparisons require diff, and Pi sessions require pi.
 ---
 
-# Skillcoffer Operations
+# Skillcoffer operations
 
-Use `skco` as the short form of `skillcoffer`. Inspect the current state before
-mutating it, perform one write at a time, and verify the resulting state.
+Inspect relevant state, execute the requested operation, verify the result.
+Reuse authorization already given. Run Store writes serially.
 
-## Mental model
-
-- The store defaults to `~/.skillcoffer`; `SKILLCOFFER_HOME` selects another store.
-- `add` imports a skill into the store. It creates an immutable version and a
-  writable `main` work tree, but does not expose the skill to an agent unless a
-  link option was explicitly requested.
-- A branch has an immutable HEAD version and an independent writable work tree.
-  `dirty` means the work tree differs from HEAD.
-- `save` creates a local version and moves that branch's HEAD. It does not move
-  pinned links.
-- A live link points to a branch work tree and sees edits immediately. A pin
-  points to one immutable version.
-- A bundle is a directory of live or pinned skill links. It is a session input,
-  not a global agent mount.
-- `skco pi ...` passes skill or bundle paths to one Pi session. `--print` shows
-  the command without starting Pi.
-- GitHub installs record both the requested ref and the commit resolved during
-  each imported upstream snapshot.
-
-Never edit a version tree. Edit only the path returned by `skco path <skill>`.
-
-## Establish state
-
-Run the smallest relevant inspection first:
+## Start
 
 ```bash
 command -v skco
 skco --help
+```
+
+If missing and installation is requested, run `npm install -g skillcoffer`,
+then verify help. Inspect `SKILLCOFFER_HOME`; default is `~/.skillcoffer`.
+Use explicit Skill names. Inspect only what the task needs:
+
+```bash
 skco list
 skco status <skill> -v
 skco bundle list
 ```
 
-Use an explicit skill name even when the CLI could infer the only installed
-skill. CLI output is intended for humans; do not build brittle parsers around
-`status` or `list` formatting.
+This guide covers v0.4.0. Check installed help when a command is unavailable.
+CLI output is for humans; do not depend on its formatting for parsing.
 
-When operating inside the skillcoffer source repository, treat these as the
-authorities for current behavior:
+## Essential rules
 
-- `docs/design.md`: domain and safety contract
-- `src/cli.ts`: supported command surface and flags
-- `src/store.ts`: state transitions and filesystem behavior
-- `src/github.ts`: GitHub source parsing and acquisition
+- `add` imports a Skill; the agent sees it only through a mount or session input.
+- Each branch has writable work and an immutable HEAD Version. Edit work only.
+- Live links expose unsaved edits immediately. Pins stay on one saved Version.
+- Editing commands default to the active branch. New links, CLI Bundle members,
+  and direct `skco pi <skill>` default to **main**.
+- `publish` sends saved HEAD. Backend push backs up the Store **including dirty work**.
 
 ## Install
 
-Install a local directory, a public GitHub skill directory, or a GitHub folder
-that contains multiple skill roots:
-
 ```bash
-skco add ./path/to/skill
-skco add 'owner/repo/path/to/skill' --ref main
-skco add 'https://github.com/owner/repo/tree/main/path/to/skill'
-skco add 'owner/repo/skills' --ref main
+skco add ./my-skill
+skco add owner/repo/path --ref main
 skco add 'https://github.com/owner/repo/tree/main/skills'
+skco add owner/repo --ref main
+skco status <skill> -v
 ```
 
-If the source directory itself contains `SKILL.md`, install that one skill.
-Otherwise discover skill roots under it (directories that contain `SKILL.md`;
-do not treat descendants of a skill root as more skills). Each installed skill
-records its own GitHub path as Upstream, so later `check` / `update` stay
-per-skill. Duplicate `name` values in the collection fail before writing.
-Existing local IDs are skipped rather than overwritten. `--name <local-id>` is
-only valid when exactly one skill is discovered.
+Local/GitHub directories can contain one Skill or a collection. Discovery stops
+at each `SKILL.md` root. Existing IDs are skipped; duplicate names fail before
+import. `--name <id>` requires one discovered Skill. Collections can partially
+succeed: inspect added/skipped/failed results before retrying.
 
-After installation, verify the snapshot rather than trusting one success line:
+A tree URL supplies its own ref. For refs containing `/`, use
+`owner/repo/path --ref feature/foo`. On a transient network error, inspect
+installed state and retry once; do not delete existing Skills to retry.
 
-```bash
-skco status <skill> -v
-work="$(skco path <skill>)"
-test -f "$work/SKILL.md"
-```
+`add --agent pi|agents|claude` links newly added Skills live. If linking fails
+after import, finish with `link --to`; another add skips installed Skills.
 
-GitHub acquisition can fail transiently during fetch or sparse checkout. On a
-network/TLS error, inspect `skco list` first, then retry once if no skill was
-created. Never remove an existing skill merely to make a retry succeed.
-
-An embedded `/tree/<ref>/...` URL supplies the ref itself. Prefer either that
-form or `owner/repo/path --ref <ref>`; do not combine them expecting `--ref` to
-override the URL.
-
-## Review and save edits
-
-Inspect user edits before recording them:
+## Edit and save
 
 ```bash
-skco status <skill> -v
+skco path <skill>
 skco diff <skill>
-skco save <skill> -m '<meaningful reason>'
+skco save <skill> -m '<reason>'
 skco status <skill> -v
 ```
 
-Preserve the user's wording for the save note when they provide one. A clean
-save is a no-op and returns the existing HEAD.
-
-To discard unsaved work, first show that it is dirty and confirm destructive
-intent unless the user explicitly asked to discard:
-
-```bash
-skco discard <skill>
-```
+Edit files under the returned work path. Preserve the user's save note.
+A clean save is a no-op; pins remain unchanged.
 
 ## Restore and branch
-
-List versions before selecting a restore target:
 
 ```bash
 skco versions <skill>
 skco restore <skill> <version-id>
-skco status <skill> -v
-```
-
-Restore moves the selected branch's HEAD and work tree together. Historical
-versions remain available, and pins remain unchanged. Dirty work is rejected
-unless `--force` is used; never force away edits without explicit approval.
-
-Use a branch when local work should continue independently:
-
-```bash
-skco branch new <skill> <branch>
+skco branch new <skill> <branch> --from <branch-or-version>
 skco work-on <skill> <branch>
-skco branch list <skill>
 ```
 
-`branch new` starts from a HEAD/version, not unsaved work. `work-on` only changes
-the CLI default branch; it does not retarget existing links. Persistent links,
-bundles, and direct `skco pi <skill>` resolution default to `main`, not the
-active branch. To expose another branch persistently, link it explicitly with
-`--ref <branch>`.
+Restore resets HEAD and work; historical Versions and pins remain. Dirty work
+requires `--force`. `skco discard <skill>` resets unsaved work to HEAD. Establish
+which edits the user authorized discarding before either destructive action.
 
-## Compare and update GitHub upstream
+New branches start from saved content, not dirty work; omitted `--from` uses
+active HEAD. `work-on` changes the CLI default without moving existing links.
 
-Use the review-first sequence:
+| Parameter | Meaning |
+|---|---|
+| `save/restore/discard/check/update/publish --branch <branch>` | Select the operation's branch |
+| `path --ref <branch>` | Return editable work for that branch |
+| `path --ref <version-id>` | Return immutable content for inspection only |
+| `diff --branch <other>` / `--version <id>` | Compare active work against that branch's work / saved Version |
+| `diff --upstream` | Compare active work with upstream; adding `--branch` does not select another work branch |
+
+## Review and apply upstream
 
 ```bash
 skco check <skill>
@@ -150,146 +104,94 @@ skco diff <skill> --upstream
 skco update <skill>
 ```
 
-Interpret `check` as follows:
+- `equal`: saved HEAD matches upstream; work may still be dirty.
+- `upstream-changed`: upstream differs; HEAD is still at its imported base.
+- `local-diverged`: HEAD differs and has moved from its imported base, or that
+  base is unknown. This does **not** prove the remote changed.
+- `unavailable`: no GitHub upstream or fetching failed.
 
-- `equal`: local HEAD tree matches current upstream.
-- `upstream-changed`: upstream differs and the local branch has not saved past
-  its upstream base.
-- `local-diverged`: both local saved history and upstream differ.
-- `unavailable`: upstream cannot currently be fetched or does not exist.
-
-`skco update` previews. Only run `skco update <skill> --apply` when the user has
-asked to apply the update. It requires clean work. Treat `--force` as a hard
-reset of locally diverged history and require explicit approval.
-
-## Persistent links
-
-For an existing skill, link explicitly to the requested harness:
+`update` previews. For another branch, use `update --branch <branch>` to preview
+without switching the active branch. When applying is authorized:
 
 ```bash
-skco link <skill> --to "$HOME/.pi/agent/skills/<skill>"
-skco link <skill> --to "$HOME/.agents/skills/<skill>"
-skco link <skill> --to "$HOME/.claude/skills/<skill>"
-```
-
-The default is `LIVE @main`. Add `--pin` when reproducibility is required:
-
-```bash
-skco link <skill> --to <leaf-path> --pin
-```
-
-A pin does not advance after `save`. Refresh an existing recorded link to the
-current HEAD with `--repin`:
-
-```bash
-skco link <skill> --to <leaf-path> --repin
-```
-
-`link` refuses ordinary files and directories. `--force` can replace an
-unrecorded symlink, so require explicit approval before using it.
-
-`--agent pi|agents|claude` is an install-time convenience for `skco add`; use
-`link --to` for an already installed skill. Prefer separate `add` and `link`
-steps when recovery matters: an `add --agent` invocation can finish importing
-the skill and then fail while creating the link. In that case, inspect `status`
-and complete the link instead of retrying the install.
-
-Verify both the manifest record and the filesystem target:
-
-```bash
+skco update <skill> --branch <branch> --apply
 skco status <skill> -v
-readlink -f <leaf-path>
-test -f <leaf-path>/SKILL.md
 ```
 
-Remove only the recorded link; the stored skill and versions remain:
+Apply requires clean work even with `--force`. Force resets diverged saved
+content to upstream; it does not merge. Historical Versions and pins survive.
+CLI apply fetches again; re-review if upstream may have changed and verify the
+applied commit. Local file sources do not support GitHub check/update.
+
+## Publish
+
+Inspect `status <skill> -v`, the selected HEAD, and the destination first.
+Publishing requires an existing GitHub repository, Git write credentials and
+commit identity. Once authorized:
+
+```bash
+skco publish <skill> owner/repo/path --ref main --branch <branch>
+skco publish <skill> --branch <branch>
+skco status <skill> -v
+```
+
+The first successful publish binds repo/path/ref; later calls reuse it.
+`--branch` selects local HEAD; `--ref` selects the remote branch. Unsaved edits
+are excluded. Publish commits/pushes immediately; no preview or force mode.
+Rebinding is unsupported. Different existing target content or subsequent
+external target changes are refused. Publication does not change Upstream.
+
+## Mount and unmount
+
+Use the requested leaf path, such as `$HOME/.pi/agent/skills/<skill>`,
+`$HOME/.agents/skills/<skill>`, or `$HOME/.claude/skills/<skill>`:
+
+```bash
+skco link <skill> --to <leaf-path> --ref <branch>
+skco link <skill> --to <leaf-path> --pin --ref <branch-or-version>
+skco link <skill> --to <leaf-path> --repin --ref <branch>
+```
+
+Repin requires a recorded link and makes it pinned, including an existing live
+link. Omitted `--ref` means **main HEAD**, not the active or original branch.
+Verify status, the actual symlink target, and `<leaf-path>/SKILL.md`.
+
+`link` refuses ordinary files/directories; replacing an unrecorded symlink with
+`--force` needs authorization for that replacement. To unmount when requested:
 
 ```bash
 skco unlink <skill> --to <leaf-path>
 ```
 
-## Bundles and session loading
-
-Create a bundle, then add members serially. Members are live unless `--pin` is
-present:
+## Bundles and sessions
 
 ```bash
 skco bundle create <bundle>
 skco bundle add <bundle> <skill-a>
 skco bundle add <bundle> <skill-b> --pin
 skco bundle list
-```
-
-Preview or start a Pi session with the bundle:
-
-```bash
 skco pi <bundle> --print
-skco pi <bundle>
 skco pi <bundle> -- --model <model>
 ```
 
-For direct skills, `skco pi <skill> --pin` selects the current immutable
-`main` HEAD. `--pin` does not rewrite modes already stored inside a bundle. To
-refresh a pinned bundle member after saving, run `bundle add <bundle> <skill>
---pin` again; it replaces that member link.
+CLI members use main work or main HEAD. Repeating `bundle add` replaces the
+member; with `--pin` it refreshes to main HEAD. CLI `bundle add` ignores `--ref`.
+Direct `skco pi <skill> --pin` uses main HEAD; it does not alter Bundle modes.
+`--print` previews without launching. Bundle names win over Skill names on collision.
 
-The current CLI exposes only `bundle create|add|path|list`. Do not invent a
-`bundle remove` command or manually edit the store when asked to remove a member
-or bundle; re-check `skco --help` because this surface may change, then report
-the current limitation or use an explicitly requested supported UI operation.
+CLI Bundle commands are only `create|add|path|list`. Use the supported
+[WebUI operations](references/web-ui.md) for removal or precise member refs;
+do not invent CLI commands or manually change Store internals.
 
-## Removal and health checks
+## Other operations
 
-Run `skco doctor` after filesystem-level troubleshooting. Remove a skill only
-on explicit request:
+- **Store backup/restore:** read [Backend](references/backend.md) before using
+  `skco backend push|pull|status`.
+- **WebUI:** read [WebUI](references/web-ui.md) for `skco ui --open`, Bundle
+  operations, and batch update checks.
+- **Remove, Doctor, Store busy, or experiments:** read
+  [Troubleshooting](references/troubleshooting.md) before proceeding.
 
-```bash
-skco remove <skill>
-```
-
-Removal is rejected while links exist. Prefer explicit `unlink` operations
-followed by `remove`, because `unlink` verifies the symlink still points at the
-skill. `remove --force` removes recorded symlink leaves and the entire stored
-skill without the same target check, so require explicit confirmation before
-using it.
-
-The CLI `doctor` checks branch HEAD trees, version hashes, and recorded skill
-links. It does not currently validate every bundle invariant; inspect bundles
-separately with `skco bundle list` and filesystem checks when diagnosing them.
-
-## Safe experiments
-
-First inspect `SKILLCOFFER_HOME`. If the caller already set it to an explicit
-isolated path, use that store as supplied; do not silently replace it with a
-second temporary store. Preserve caller-owned state long enough for any
-requested external verification.
-
-When no isolated store was supplied, create one and clean only the directory
-this process created:
-
-```bash
-lab="$(mktemp -d)"
-trap 'rm -rf "$lab"' EXIT
-export SKILLCOFFER_HOME="$lab/store"
-skco add ./examples/demo-skill
-skco status demo-skill -v
-skco doctor
-```
-
-Do not clean or replace a store you did not create. If a test harness needs to
-inspect the result after the agent exits, let the harness own cleanup instead
-of installing an EXIT trap.
-
-Do not use `--agent` in an isolated experiment: harness preset paths are under
-the real home directory, independent of `SKILLCOFFER_HOME`. If link behavior
-must be tested, use `link --to "$lab/mounts/<skill>"` and unlink it afterward.
-
-The current store lock is prototype-grade. Never run mutating `skco` commands
-in parallel, including multiple `bundle add` operations.
-
-## Report results
-
-State the skill or bundle name, resulting mode (`live` or `pin`), relevant path,
-HEAD/upstream identity when applicable, and whether the final work tree is
-clean. Mention retries or commands that could not be verified. Do not claim a
-skill is available to a harness merely because it was added to the store.
+Report the relevant Skill/Bundle, branch/HEAD, clean or dirty state, mount mode
+and verified path. For remote operations include destination/ref and commit.
+Mention failures or unverified results; import alone is not agent availability.
