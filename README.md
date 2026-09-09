@@ -4,6 +4,7 @@
 
 **简体中文** | [English](./README.en.md)
 
+[![npm version](https://img.shields.io/npm/v/skillcoffer.svg)](https://www.npmjs.com/package/skillcoffer)
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f.svg)](./LICENSE)
 ![Node.js >= 20](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)
@@ -39,7 +40,7 @@ skillcoffer 不是 Git 的替代品、远程市场或 agent runtime；它专注�
 
 ## 安装
 
-使用 npm 全局安装：
+使用 npm 全局安装（[查看 npm 包](https://www.npmjs.com/package/skillcoffer)）：
 
 ```bash
 npm install -g skillcoffer

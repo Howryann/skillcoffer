@@ -4,6 +4,7 @@
 
 [简体中文](./README.md) | **English**
 
+[![npm version](https://img.shields.io/npm/v/skillcoffer.svg)](https://www.npmjs.com/package/skillcoffer)
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f.svg)](./LICENSE)
 ![Node.js >= 20](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)
@@ -39,7 +40,7 @@ skillcoffer is not a replacement for Git, a remote marketplace, or an agent runt
 
 ## Installation
 
-Install globally from npm:
+Install globally from npm ([view package](https://www.npmjs.com/package/skillcoffer)):
 
 ```bash
 npm install -g skillcoffer
